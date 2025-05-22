@@ -1,0 +1,31 @@
+{
+    "topic": "tickers.1000RATSUSDT",
+    "type": "snapshot",
+    "data": {
+        "symbol": "1000RATSUSDT",
+        "tickDirection": "ZeroPlusTick",
+        "price24hPcnt": "-0.022838",
+        "lastPrice": "0.01797",
+        "prevPrice24h": "0.01839",
+        "highPrice24h": "0.02393",
+        "lowPrice24h": "0.01744",
+        "prevPrice1h": "0.01784",
+        "markPrice": "0.01800",
+        "indexPrice": "0.01800",
+        "openInterest": "264359820",
+        "openInterestValue": "4758476.76",
+        "turnover24h": "32715893.2115",
+        "volume24h": "1631316300.0000",
+        "nextFundingTime": "1739793600000",
+        "fundingRate": "0.00000153",
+        "bid1Price": "0.01797",
+        "bid1Size": "1500",
+        "ask1Price": "0.01798",
+        "ask1Size": "2160",
+        "preOpenPrice": "",
+        "preQty": "",
+        "curPreListingPhase": ""
+    },
+    "cs": 182402586041,
+    "ts": 1739788052207
+}

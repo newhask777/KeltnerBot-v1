@@ -1,0 +1,47 @@
+{
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {
+        "nextPageCursor": "DOGEUSDT%2C1739809350090%2C0",
+        "category": "linear",
+        "list": [
+            {
+                "symbol": "DOGEUSDT",
+                "leverage": "10",
+                "autoAddMargin": 0,
+                "avgPrice": "0",
+                "liqPrice": "",
+                "riskLimitValue": "250000",
+                "takeProfit": "",
+                "positionValue": "",
+                "isReduceOnly": false,
+                "tpslMode": "Full",
+                "riskId": 206,
+                "trailingStop": "0",
+                "unrealisedPnl": "",
+                "markPrice": "0.25976",
+                "adlRankIndicator": 0,
+                "cumRealisedPnl": "-1.7517125",
+                "positionMM": "0",
+                "createdTime": "1739605063857",
+                "positionIdx": 0,
+                "positionIM": "0",
+                "seq": 210208053927,
+                "updatedTime": "1739809350090",
+                "side": "",
+                "bustPrice": "",
+                "positionBalance": "0",
+                "leverageSysUpdatedTime": "",
+                "curRealisedPnl": "0",
+                "size": "0",
+                "positionStatus": "Normal",
+                "mmrSysUpdatedTime": "",
+                "stopLoss": "",
+                "tradeMode": 0,
+                "sessionAvgPrice": ""
+            }
+        ]
+    },
+    "retExtInfo": {},
+    "time": 1739809499071
+}
