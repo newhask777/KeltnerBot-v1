@@ -9,7 +9,7 @@ bybit = BybitTrader(
     interval=5, 
     symbol="DOGEUSDT", 
     category="linear",
-    qty=40,
+    qty=30,
 )
 
 

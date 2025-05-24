@@ -62,6 +62,7 @@ class BybitTrader(KeltnerChannel, ByBitMethods):
             price_change = self.calculate_price_change_percentage(close_price, open_price) # Расчет разницы между ценой открытия и последней ценой в %
 
 
+
             df = self.http_query(self.session)
             # df = df.iloc[:, :-1]
             df = self.calculate_keltner_channel(df, self.ema_period, self.atr_period, self.multiplier) # Расчет канала Кельтнера
@@ -82,11 +83,13 @@ class BybitTrader(KeltnerChannel, ByBitMethods):
 
                 # Открыть Long позицию
                 self.place_buy_market_order()
+                self.signal = 'Buy'
+                self.in_position = True
 
             elif self.signal == 'Buy' or self.signal == None and self.in_position == True:           
                 last_row = df.iloc[-1]
 
-                if price_change >= 0.55:
+                if price_change >= 0.05:
 
                     # Тэйк профит
                     r = self.session.place_order(
@@ -94,29 +97,38 @@ class BybitTrader(KeltnerChannel, ByBitMethods):
                             symbol=self.symbol,
                             side="Sell",
                             orderType="Market",
-                            # qty=floor_price(avbl, 3),
                             qty=10,
-                            # timeInForce="GoodTillCancel",
                             reduceOnly=True,
-                            # closeOnTrigger=True,
                         )
 
                     self.in_position = False
                     self.signal = 'First Profit' 
+
+                # Реализация второго тэйк профита
+                elif price_change >= 0.07 and self.signal == 'First profit':
+
+                    r = self.session.place_order(
+                        category=self.category,
+                        symbol=self.symbol,
+                        side="Buy",
+                        orderType="Market",
+                        qty=19,
+                        reduceOnly=True,
+                    )
+
+                    self.in_position = False
+                    self.signal = 'Second Profit' 
                 
                 # Стоп лосс
-                elif price_change <= -1.55:
+                elif price_change <= -1:
 
                     r = self.session.place_order(
                         category=self.category,
                         symbol=self.symbol,
                         side="Sell",
                         orderType="Market",
-                        # qty=floor_price(avbl, 3),
                         qty=self.qty,
-                        # timeInForce="GoodTillCancel",
                         reduceOnly=True,
-                        # closeOnTrigger=True,
                     )
 
                     self.in_position = False
@@ -134,49 +146,53 @@ class BybitTrader(KeltnerChannel, ByBitMethods):
 
                 # Открыть Short позицию
                 self.place_sell_market_order()
+                self.signal = 'Sell'
+                self.in_position = True
 
             elif self.signal == 'Sell' or self.signal == None and self.in_position == True: 
                 last_row = df.iloc[-1]
 
-                # Тэйк профит
-                if price_change >= 0.55:
-
-                    r = self.session.place_order(
+                # Тейк-профит 0.5% (для шорта цена ДОЛЖНА УПАСТЬ, поэтому проверяем ОТРИЦАТЕЛЬНОЕ изменение)
+                if price_change <= -0.05:  # <-- Исправлено условие!
+                    self.session.place_order(
                         category=self.category,
                         symbol=self.symbol,
-                        side="Buy",
+                        side="Buy",  # Правильно для закрытия шорта
                         orderType="Market",
-                        # qty=floor_price(avbl, 3),
                         qty=10,
-                        # timeInForce="GoodTillCancel",
                         reduceOnly=True,
-                        # closeOnTrigger=True,
                     )
+                    self.signal = 'First Profit'  # Унифицирован регистр
+                    # Не закрываем позицию полностью (in_position остается True)
 
-                    self.in_position = False
-                    self.signal = 'First Profit' 
-
-                # Стоп лосс
-                elif price_change <= -1.55:
-
-                    r = self.session.place_order(
+                # Второй тейк-профит 0.7% 
+                elif price_change <= -0.07 and self.signal == 'First Profit':  # <-- Исправлен регистр!
+                    self.session.place_order(
                         category=self.category,
                         symbol=self.symbol,
                         side="Buy",
                         orderType="Market",
-                        # qty=floor_price(avbl, 3),
-                        qty=self.qty,
-                        # timeInForce="GoodTillCancel",
+                        qty=19,
                         reduceOnly=True,
-                        # closeOnTrigger=True,
                     )
+                    self.in_position = False  # Полностью закрыли позицию
+                    self.signal = 'Second Profit'
 
+                # Стоп-лосс 1% (цена ПОДНЯЛАСЬ - срабатываем при ПОЛОЖИТЕЛЬНОМ изменении)
+                elif price_change >= 1.0:  # <-- Условие изменено!
+                    self.session.place_order(
+                        category=self.category,
+                        symbol=self.symbol,
+                        side="Buy",
+                        orderType="Market",
+                        qty=self.qty,
+                        reduceOnly=True,
+                    )
                     self.in_position = False
                     self.signal = None
 
-                # Закрыть позицию Short
-                elif close_price > last_row['lower_band']:
-
+                # Закрытие по пробитию канала
+                elif last_row['close'] > last_row['lower_band']:
                     self.place_close_position_order(side="Buy", direction="Short")
 
 

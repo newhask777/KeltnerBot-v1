@@ -26,19 +26,32 @@ class ByBitMethods:
         except:
             print('No open positions')
             return None
-        
 
-    # Функция для расчета изменения цены в процентах  
+
+    # Функция для расчета изменения цены в процентах (БЕЗ ABS!)
     def calculate_price_change_percentage(self, current_price, open_price):
         try:
             if open_price > 0:
-                percantage = abs(round(((current_price - open_price) / open_price) * 100, 2))
-                # percantage = round(((current_price - open_price) / open_price) * 100, 2)
-                # percantage = round(percantage, 2)
-                print(percantage)
-            return percantage
+                # Убрали abs() чтобы сохранить направление изменения
+                percentage = round(((current_price - open_price) / open_price) * 100, 2) 
+                return percentage  # Исправлена опечатка в названии переменной
+            return 0.0  # Возвращаем 0 если open_price <= 0
         except:
-            return print('no open price')
+            print('Error in calculate_price_change_percentage')
+            return 0.0  # Всегда возвращаем число
+        
+
+    # # Функция для расчета изменения цены в процентах  
+    # def calculate_price_change_percentage(self, current_price, open_price):
+    #     try:
+    #         if open_price > 0:
+    #             percantage = abs(round(((current_price - open_price) / open_price) * 100, 2))
+    #             # percantage = round(((current_price - open_price) / open_price) * 100, 2)
+    #             # percantage = round(percantage, 2)
+    #             print(percantage)
+    #         return percantage
+    #     except:
+    #         return print('no open price')
 
 
     # Функция для проверки условий входа и выхода Канал Кельтнера
@@ -105,7 +118,7 @@ class ByBitMethods:
         
 
     # Функция размещения ордера на покупку по рыночной цене 
-    def place_buy_market_order(self):
+    def place_buy_market_order(self, signal: str = None):
              
         # print(self.signal)
         print("Сигнал на покупку")
@@ -120,8 +133,8 @@ class ByBitMethods:
                 qty=self.qty,
         )
 
-        self.in_position = True
-        self.signal = 'Buy'
+        # self.in_position = True
+        # self.signal = signal
                
         print(self.in_position)
         print(self.signal)
@@ -129,7 +142,7 @@ class ByBitMethods:
 
 
     #
-    def place_sell_market_order(self):
+    def place_sell_market_order(self, signal: str = None):
         print("Сигнал на продажу")
         # Размещение ордера на продажу
             
@@ -142,8 +155,8 @@ class ByBitMethods:
                 qty=self.qty,
             )
 
-        self.in_position = True
-        self.signal = 'Sell'
+        # self.in_position = True
+        # self.signal = signal
                 
         print(self.in_position)
         print(self.signal)
