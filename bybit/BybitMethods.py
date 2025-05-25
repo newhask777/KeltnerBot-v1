@@ -34,24 +34,14 @@ class ByBitMethods:
             if open_price > 0:
                 # Убрали abs() чтобы сохранить направление изменения
                 percentage = round(((current_price - open_price) / open_price) * 100, 2) 
+                print(percentage)
                 return percentage  # Исправлена опечатка в названии переменной
+            print('no open price')
             return 0.0  # Возвращаем 0 если open_price <= 0
         except:
             print('Error in calculate_price_change_percentage')
             return 0.0  # Всегда возвращаем число
         
-
-    # # Функция для расчета изменения цены в процентах  
-    # def calculate_price_change_percentage(self, current_price, open_price):
-    #     try:
-    #         if open_price > 0:
-    #             percantage = abs(round(((current_price - open_price) / open_price) * 100, 2))
-    #             # percantage = round(((current_price - open_price) / open_price) * 100, 2)
-    #             # percantage = round(percantage, 2)
-    #             print(percantage)
-    #         return percantage
-    #     except:
-    #         return print('no open price')
 
 
     # Функция для проверки условий входа и выхода Канал Кельтнера
@@ -76,8 +66,6 @@ class ByBitMethods:
     def check_signals_by_message(self, df, message):
         last_row = df.iloc[-1]
         prev_row = df.iloc[-2]
-
-       
 
         # Условие для покупки
         # if message["data"][0]["close"] > last_row['upper_band'] and prev_row['close'] <= prev_row['upper_band']:
@@ -190,13 +178,9 @@ class ByBitMethods:
                 symbol=self.symbol,
                 side=side,
                 orderType="Market",
-                # qty=floor_price(avbl, 3),
                 qty=self.qty,
-                # timeInForce="GoodTillCancel",
                 reduceOnly=True,
-                # closeOnTrigger=True,
             )
-
+        print(f"Позиция {direction} закрыта")  
         self.in_position = False
         self.signal = None
-        print(f"Позиция {direction} закрыта")  
