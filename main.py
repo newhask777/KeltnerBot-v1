@@ -1,4 +1,4 @@
-from bybit.Trader import BybitTrader
+from bybit.Keltner.Trader import BybitTrader
 import time
 
 
