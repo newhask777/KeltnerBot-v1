@@ -105,11 +105,13 @@ def strategy():
     current_position = get_position()
     
     # Логика стратегии
-    if ma7 > ma28 and ma14 > ma28:
+    # if ma7 > ma28 and ma14 > ma28:
+    if ma7 > ma14:
         if current_position != 'Buy':
             print("Сигнал на лонг")
             place_order('long')
-    elif ma7 < ma28 and ma14 < ma28:
+    # elif ma7 < ma28 and ma14 < ma28:
+    elif ma7 < ma14:
         if current_position != 'Sell':
             print("Сигнал на шорт")
             place_order('short')
