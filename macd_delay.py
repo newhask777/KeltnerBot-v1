@@ -9,9 +9,9 @@ from playsound3 import playsound
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 30 # Минуты
+TIMEFRAME = 1 # Минуты
 QTY = 30  # Размер позиции в USDT
-MIN_MACD_DIFF = 0.0005   # Минимальная разница между MACD и Signal
+MIN_MACD_DIFF = 0.00025# Минимальная разница между MACD и Signal
 
 last_trade_time = None
 
@@ -59,47 +59,78 @@ def calculate_macd(df):
     return df
 
 
-def check_crossover(df):
-    """Улучшенная проверка пересечений с защитой от ложных сигналов"""
-    if len(df) < 3:
+def line_cross(df):
+    """Определение пересечений с проверкой на достаточность данных"""
+    if len(df) < 2:
         return False, False
     
-    # Берем три последних значения для анализа
-    prev_macd = df['MACD'].iloc[-3]
-    prev_signal = df['Signal'].iloc[-3]
-    
-    mid_macd = df['MACD'].iloc[-2]
-    mid_signal = df['Signal'].iloc[-2]
-    
+    prev_macd = df['MACD'].iloc[-2]
+    prev_signal = df['Signal'].iloc[-2]
     current_macd = df['MACD'].iloc[-1]
     current_signal = df['Signal'].iloc[-1]
     
-    # Условие для BUY: 
-    # 1. Предыдущее значение MACD ниже Signal
-    # 2. Текущее значение MACD выше Signal
-    # 3. Разница превышает минимальный порог
-    # 4. Подтверждение: среднее значение также показывает восходящий тренд
-    crossover = (
-        prev_macd < prev_signal and 
-        current_macd > current_signal and
-        (current_macd - current_signal) >= MIN_MACD_DIFF and
-        mid_macd > mid_signal  # Подтверждение в средней точке
-    )
+    # crossover = prev_macd < prev_signal and current_macd > current_signal
+    # crossunder = prev_macd > prev_signal and current_macd < current_signal
+        
+    current_crossover = current_macd > current_signal
+    current_crossunder = current_macd < current_signal
+
+    return current_crossover, current_crossunder
+
+
+def check_crossover(df):
+    """Определение пересечений с защитой от ложных срабатываний"""
+    if len(df) < 3:
+        return False, False
     
-    # Условие для SELL:
-    # 1. Предыдущее значение MACD выше Signal
-    # 2. Текущее значение MACD ниже Signal
-    # 3. Разница превышает минимальный порог
-    # 4. Подтверждение: среднее значение также показывает нисходящий тренд
-    crossunder = (
-        prev_macd > prev_signal and 
-        current_macd < current_signal and
-        (current_signal - current_macd) >= MIN_MACD_DIFF and
-        mid_macd < mid_signal  # Подтверждение в средней точке
-    )
+    # Берем три последних значения
+    prev_macd = df['MACD'].iloc[-3]
+    prev_signal = df['Signal'].iloc[-3]
+    mid_macd = df['MACD'].iloc[-2]
+    mid_signal = df['Signal'].iloc[-2]
+    current_macd = df['MACD'].iloc[-1]
+    current_signal = df['Signal'].iloc[-1]
+    
+    # Рассчитываем тренд MACD (разница за 2 периода)
+    macd_trend = current_macd - prev_macd
+    
+    # Условие для BUY
+    if macd_trend > 0:
+        crossover = (
+            prev_macd < prev_signal and  # Предыдущее значение ниже
+            current_macd > current_signal and  # Текущее значение выше
+            (current_macd - current_signal) >= MIN_MACD_DIFF and  # Разница превышает порог
+            mid_macd > mid_signal and  # Подтверждение в средней точке
+            macd_trend > 0  # MACD движется вверх
+        )
+        
+        # Условие для SELL
+        crossunder = (
+            prev_macd > prev_signal and  # Предыдущее значение выше
+            current_macd < current_signal and  # Текущее значение ниже
+            (current_signal - current_macd) >= MIN_MACD_DIFF and  # Разница превышает порог
+            mid_macd < mid_signal and  # Подтверждение в средней точке
+            macd_trend < 0  # MACD движется вниз
+        )
+    elif macd_trend < 0:
+        crossover = (
+            prev_macd < prev_signal and  # Предыдущее значение ниже
+            current_macd > current_signal and  # Текущее значение выше
+            (current_macd - current_signal) >= -MIN_MACD_DIFF and  # Разница превышает порог
+            mid_macd > mid_signal and  # Подтверждение в средней точке
+            macd_trend > 0  # MACD движется вверх
+        )
+        
+        # Условие для SELL
+        crossunder = (
+            prev_macd > prev_signal and  # Предыдущее значение выше
+            current_macd < current_signal and  # Текущее значение ниже
+            (current_signal - current_macd) >= -MIN_MACD_DIFF and  # Разница превышает порог
+            mid_macd < mid_signal and  # Подтверждение в средней точке
+            macd_trend < 0  # MACD движется вниз
+        )
     
     return crossover, crossunder
-
 
 
 def execute_trade(signal):
@@ -137,6 +168,41 @@ def play():
     sound = playsound("sound.mp3", block=True)
 
 
+def trend(df):
+    macd_trend = df['MACD'].iloc[-1] - df['MACD'].iloc[-3]
+    return macd_trend
+
+
+def close_position(signal):
+    """Исполнение ордеров для Unified Account"""
+    global position
+    
+    try:
+        params = {
+            "category": "linear",
+            "symbol": SYMBOL,
+            "orderType": "Market",
+            "qty": str(QTY),
+            "timeInForce": "GTC"
+        }
+        
+        if signal == 'BUY' and position == 'SHORT':
+            print(f"{datetime.now()} - CLOSE SHORT {QTY} USDT")
+            session.place_order(**params, side="Buy")
+            play()
+            # time.sleep(15)
+            
+        elif signal == 'SELL' and position == 'LONG':
+            print(f"{datetime.now()} - CLOSE LONG {QTY} USDT")
+            session.place_order(**params, side="Sell")     
+            play()
+            # time.sleep(15)
+            
+    except Exception as e:
+        print(f"Trade error: {str(e)}")
+
+
+
 def main_loop():
     global position
     next_run = datetime.now()
@@ -150,13 +216,20 @@ def main_loop():
             
             # Проверяем качество сигнала
             crossover, crossunder = check_crossover(df)
+
+            current_crossover, current_crossunder = line_cross(df)
             
             # Дополнительная проверка: сила тренда
-            macd_trend = df['MACD'].iloc[-1] - df['MACD'].iloc[-3]
-            if crossover and macd_trend > 0:
-                execute_trade('BUY')
-            elif crossunder and macd_trend < 0:
-                execute_trade('SELL')
+            macd_trend = trend(df)
+
+            if current_crossover:
+                close_position('SELL')
+                if crossover:
+                    execute_trade('BUY')
+            elif current_crossunder:
+                close_position('BUY')
+                if crossunder:
+                    execute_trade('SELL')
 
                 
             print(f"\n{current_time} | Next: {next_run}")
