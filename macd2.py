@@ -7,9 +7,9 @@ from playsound3 import playsound
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 1
+TIMEFRAME = 30
 QTY = 30
-MIN_MACD_DIFF = 0.00001
+MIN_MACD_DIFF = 0.0001
 TRADE_COOLDOWN = 60  # Защита от частых сделок (секунды)
 
 session = HTTP(
@@ -77,13 +77,16 @@ def check_macd_diff(df):
     # Определяем положение гистограммы
     is_above_zero = hist >= 0
 
+    plus_macd = df['MACD'].iloc[-1] >= df['Signal'].iloc[-1]
+    minus_macd = df['MACD'].iloc[-1] <= df['Signal'].iloc[-1]
+
     if is_above_zero:
-        if float(df['MACD'].iloc[-1]) - float(df['Signal'].iloc[-1]) == MIN_MACD_DIFF:
-            sign_macd = MIN_MACD_DIFF
+        if plus_macd >= MIN_MACD_DIFF:
+            return True
     else: 
-        if float(df['MACD'].iloc[-1]) - float(df['Signal'].iloc[-1]) == -MIN_MACD_DIFF:
-            sign_macd = -MIN_MACD_DIFF
-    return sign_macd
+        if minus_macd <= -MIN_MACD_DIFF:
+            return False
+    return None
 
 
 def check_crossover(df):
@@ -91,38 +94,49 @@ def check_crossover(df):
     if df is None or len(df) < 3:
         return False, False
     
-    prev_macd = df['MACD'].iloc[-2]
-    prev_signal = df['Signal'].iloc[-2]
+    prev_macd = df['MACD'].iloc[-3]
+    prev_signal = df['Signal'].iloc[-3]   
+    mid_macd = df['MACD'].iloc[-2]
+    mid_signal = df['Signal'].iloc[-2]   
     current_macd = df['MACD'].iloc[-1]
     current_signal = df['Signal'].iloc[-1]
+
     hist = current_macd - current_signal
     
     # Определяем положение гистограммы
     is_above_zero = hist >= 0
     
-    # Проверка пересечения вверх
-    crossover = (
-        prev_macd < prev_signal and 
-        current_macd > current_signal
-    )
-    # if crossover:
-    #     # Для положительной гистограммы используем MIN_MACD_DIFF > 0
-    #     # Для отрицательной гистограммы используем MIN_MACD_DIFF < 0
-    #     required_diff = MIN_MACD_DIFF if is_above_zero else -MIN_MACD_DIFF
-    #     crossover = hist >= required_diff
-    #     play()
+    if is_above_zero:
+        # Проверка пересечения вверх
+        crossover = (
+            prev_macd < prev_signal and 
+            current_macd > current_signal and
+            (current_macd - current_signal) >= MIN_MACD_DIFF and
+            mid_macd > mid_signal  # Подтверждение в средней точке
+        )
 
-    # Проверка пересечения вниз
-    crossunder = (
-        prev_macd > prev_signal and 
-        current_macd < current_signal
-    )
-    # if crossunder:
-    #     # Для положительной гистограммы используем MIN_MACD_DIFF > 0
-    #     # Для отрицательной гистограммы используем MIN_MACD_DIFF < 0
-    #     required_diff = MIN_MACD_DIFF if not is_above_zero else -MIN_MACD_DIFF
-    #     crossunder = abs(hist) >= required_diff and hist < 0
-    #     play()
+        # Проверка пересечения вниз
+        crossunder = (
+            prev_macd > prev_signal and 
+            current_macd < current_signal and
+            (current_signal - current_macd) >= MIN_MACD_DIFF and
+            mid_macd < mid_signal  # Подтверждение в средней точке
+        )
+    else:
+        crossover = (
+            prev_macd < prev_signal and 
+            current_macd > current_signal and
+            (current_macd - current_signal) >= -MIN_MACD_DIFF and
+            mid_macd > mid_signal  # Подтверждение в средней точке
+        )
+
+        # Проверка пересечения вниз
+        crossunder = (
+            prev_macd > prev_signal and 
+            current_macd < current_signal and
+            (current_signal - current_macd) >= -MIN_MACD_DIFF and
+            mid_macd < mid_signal  # Подтверждение в средней точке
+        )
 
     return crossover, crossunder
 
