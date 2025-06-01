@@ -2,13 +2,16 @@ import os
 import time
 import pandas as pd
 from pybit.unified_trading import HTTP
+from playsound3 import playsound
 
 # Настройки API
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = '30'  # Минуты
+TIMEFRAME = '60'  # Минуты
 QTY = 30       # Размер позиции в BTC
+
+position = None
 
 # Инициализация клиента
 session = HTTP(
@@ -28,22 +31,22 @@ def get_klines():
     df = df.iloc[::-1]  # Реверсируем порядок данных
     
     # Конвертация данных
-    df['timestamp'] = pd.to_datetime(df[0], unit='ms')
+    # Convert the string column to numeric first, then to datetime
+    df['timestamp'] = pd.to_numeric(df[0], errors='coerce')  # Convert strings to numeric (NaNs for invalid values)
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')  # Use numeric values with unit='ms'
     df['close'] = df[4].astype(float)
 
-    print(df)
+    # print(df)
     
     return df[['timestamp', 'close']]
 
+# change
 def calculate_mas(df):
     """Расчет скользящих средних"""
-    df['ma7'] = df['close'].rolling(7).mean()
-    df['ma14'] = df['close'].rolling(14).mean()
-    df['ma28'] = df['close'].rolling(28).mean()
+    df['ma7'] = df['close'].ewm(span=7, adjust=False).mean()
+    df['ma14'] = df['close'].ewm(span=14, adjust=False).mean()
+    df['ma28'] = df['close'].ewm(span=28, adjust=False).mean()
     return df
-
-def get_last_mas():
-    pass
 
 def get_position():
     """Получение текущей позиции"""
@@ -55,7 +58,15 @@ def get_position():
         return positions['result']['list'][0]['side']
     return None
 
+def play():
+    """Воспроизведение звукового сигнала"""
+    try:
+        playsound("sound.mp3", block=True)
+    except:
+        print("Sound play failed")
+
 def place_order(side):
+    global position
     """Размещение ордера"""
     if side == 'long':
         # Закрытие шорта перед открытием лонга
@@ -76,6 +87,9 @@ def place_order(side):
             orderType='Market',
             qty=QTY
         )
+        play()
+        position = 'Buy'
+
     elif side == 'short':
         # Закрытие лонга перед открытием шорта
         if get_position() == 'Buy':
@@ -95,6 +109,8 @@ def place_order(side):
             orderType='Market',
             qty=QTY
         )
+        play()
+        position = 'Sell'
 
 def strategy():
     df = get_klines()
@@ -120,6 +136,8 @@ def strategy():
             place_order('short')
     else:
         print("Нет четкого сигнала")
+
+    print(position)
 
 if __name__ == "__main__":
     while True:
