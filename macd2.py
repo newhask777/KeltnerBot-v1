@@ -6,9 +6,9 @@ from playsound3 import playsound
 
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
-SYMBOL = 'DOGEUSDT'
+SYMBOL = 'HUMAUSDT'
 TIMEFRAME = 60
-QTY = 30
+QTY = 300
 TRADE_COOLDOWN = 60  # Защита от частых сделок (секунды)
 
 session = HTTP(
@@ -17,7 +17,7 @@ session = HTTP(
 )
 
 position = None
-min_macd_dif = 0.00001
+min_macd_dif = 0.0005
 
 last_trade_time = None
 
@@ -123,30 +123,27 @@ def check_crossover(df):
         )
 
 
-        # crossunder = (
-        #     prev_macd > prev_signal and 
-        #     current_macd < current_signal and
-        #     (current_signal - current_macd) >= min_macd_dif and
-        #     mid_macd < mid_signal  # Подтверждение в средней точке
-        # )
+        crossunder = (
+            prev_macd > prev_signal and 
+            current_macd < current_signal and
+            (current_signal - current_macd) >= min_macd_dif and
+            mid_macd < mid_signal  # Подтверждение в средней точке
+        )
 
-        if crossover:
-            print('crossover above')
+        print('above')
         
-
-        return 'crossover'
 
     # Проверка пересечения вниз
     elif under_zero:
 
-        # min_macd_dif = -min_macd_dif
+        min_macd_dif = -min_macd_dif
 
-        # crossover = (
-        #     prev_macd < prev_signal and 
-        #     current_macd > current_signal and
-        #     (current_macd - current_signal) >= min_macd_dif and
-        #     mid_macd > mid_signal  # Подтверждение в средней точке
-        # )
+        crossover = (
+            prev_macd < prev_signal and 
+            current_macd > current_signal and
+            (current_macd - current_signal) >= min_macd_dif and
+            mid_macd > mid_signal  # Подтверждение в средней точке
+        )
 
         crossunder = (
             prev_macd > prev_signal and 
@@ -155,11 +152,10 @@ def check_crossover(df):
             mid_macd < mid_signal  # Подтверждение в средней точке
         )
 
-        if crossunder:
-            print('crossunder under')
+        print('under')
 
-        return 'crossunder'
-    return None
+        
+    return crossover, crossunder
     
 
 
@@ -280,14 +276,16 @@ def main_loop():
                 df = calculate_macd(df)
                 
                 if df is not None:
+
+                    crossover, crossunder = check_crossover(df)
                     
                     # Логика для LONG позиции
-                    if check_crossover(df) == 'crossunder' and position != 'LONG':
+                    if  crossover and position != 'LONG':
                         close_position('BUY')
                         execute_trade('BUY')
                           
                     # Логика для SHORT позиции
-                    elif check_crossover(df) == 'crossover' and position != 'SHORT':
+                    elif crossunder and position != 'SHORT':
                         close_position('SELL')
                         execute_trade('SELL')
                        
