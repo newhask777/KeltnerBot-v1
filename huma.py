@@ -9,9 +9,8 @@ from position import get_unrealized_pnl_percentage
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'HUMAUSDT'
-TIMEFRAME = 60
+TIMEFRAME = 240
 QTY = 300
-TRADE_COOLDOWN = 60  # Защита от частых сделок (секунды)
 
 session = HTTP(
     api_key=API_KEY,
@@ -19,7 +18,8 @@ session = HTTP(
 )
 
 position = None
-min_macd_dif = 0.0005
+min_macd_dif = 0.0001
+status = None
 
 last_trade_time = None
 
@@ -173,7 +173,7 @@ def execute_trade(signal):
         print(f"Trade error: {str(e)}")
 
 
-def close_position(signal):
+def close_position(signal, qty=None):
     """Закрытие текущей позиции"""
     global position, last_trade_time
     
@@ -187,20 +187,20 @@ def close_position(signal):
             "category": "linear",
             "symbol": SYMBOL,
             "orderType": "Market",
-            "qty": str(QTY),
+            "qty": str(qty),
             "timeInForce": "GTC",
             "reduceOnly": True  # Только закрытие позиции
         }
         
         if signal == 'BUY' and position == 'SHORT':
-            print(f"{datetime.now()} - CLOSE SHORT {QTY} USDT")
+            print(f"{datetime.now()} - CLOSE SHORT {qty} USDT")
             session.place_order(**params, side="Buy")
             # signal = 'BUY'
             position = None
             play()
             
         elif signal == 'SELL' and position == 'LONG':
-            print(f"{datetime.now()} - CLOSE LONG {QTY} USDT")
+            print(f"{datetime.now()} - CLOSE LONG {qty} USDT")
             session.place_order(**params, side="Sell")
             # signal = 'SELL'
             position = None
@@ -275,6 +275,7 @@ def get_current_position():
 def main_loop():
     global position
     global min_macd_dif
+    global status
     
     # Инициализация позиции
     position = get_current_position()
