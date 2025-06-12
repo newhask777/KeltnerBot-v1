@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 from playsound3 import playsound
 
+from position import get_unrealized_pnl_percentage
+
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'HUMAUSDT'
@@ -51,11 +53,7 @@ def calculate_macd(df):
     if df is None or len(df) < 50:
         print("Not enough data for MACD calculation")
         return None
-    
-    df['ma7'] = df['close'].ewm(span=7, adjust=False).mean()
-    df['ma14'] = df['close'].ewm(span=14, adjust=False).mean()
-    df['ma28'] = df['close'].ewm(span=28, adjust=False).mean()
-    
+
     df['EMA12'] = df['close'].ewm(span=12, adjust=False).mean()
     df['EMA26'] = df['close'].ewm(span=26, adjust=False).mean()
     df['MACD'] = df['EMA12'] - df['EMA26']
@@ -63,30 +61,6 @@ def calculate_macd(df):
 
 
     return df
-
-
-def check_macd_diff(df):
-    """Проверка пересечения MACD и Signal линии с учетом положения гистограммы"""
-    if df is None or len(df) < 3:
-        return False, False
-    
-    current_macd = df['MACD'].iloc[-1]
-    current_signal = df['Signal'].iloc[-1]
-    hist = current_macd - current_signal
-    
-    # Определяем положение гистограммы
-    is_above_zero = hist >= 0
-
-    plus_macd = df['MACD'].iloc[-1] >= df['Signal'].iloc[-1]
-    minus_macd = df['MACD'].iloc[-1] <= df['Signal'].iloc[-1]
-
-    if is_above_zero:
-        if plus_macd >= MIN_MACD_DIFF:
-            return True
-    else: 
-        if minus_macd <= -MIN_MACD_DIFF:
-            return False
-    return None
 
 
 def check_crossover(df):
@@ -154,10 +128,14 @@ def check_crossover(df):
 
         print('under')
 
+    else:
+        crossover = False
+        crossunder = False
+
+
         
     return crossover, crossunder
     
-
 
 def execute_trade(signal):
     """Исполнение торгового сигнала"""
@@ -234,6 +212,41 @@ def close_position(signal):
         print(f"Close position error: {str(e)}")
 
 
+def take_profit(signal, qty=None):
+    """Закрытие текущей позиции"""
+    global position, last_trade_time
+    
+    # current_time = time.time()
+    # if last_trade_time and (current_time - last_trade_time) < TRADE_COOLDOWN:
+    #     print("Trade cooldown active")
+    #     return
+    
+    try:
+        params = {
+            "category": "linear",
+            "symbol": SYMBOL,
+            "orderType": "Market",
+            "qty": str(qty),
+            "timeInForce": "GTC",
+            "reduceOnly": True  # Только закрытие позиции
+        }
+        
+        if position == 'LONG':
+            print(f"{datetime.now()} - TAKE PROFIT {QTY} USDT")
+            session.place_order(**params, side="Sell")
+            play()
+        
+        elif position == 'SHORT':
+            print(f"{datetime.now()} - TAKE PROFIT {QTY} USDT")
+            session.place_order(**params, side="Buy")
+            play()
+            
+        # last_trade_time = current_time
+        
+    except Exception as e:
+        print(f"Close position error: {str(e)}")
+
+
 def play():
     """Воспроизведение звукового сигнала"""
     try:
@@ -278,21 +291,42 @@ def main_loop():
                 if df is not None:
 
                     crossover, crossunder = check_crossover(df)
+
+                    pnl = get_unrealized_pnl_percentage(SYMBOL, session)
+
                     
-                    # Логика для LONG позиции
-                    if  crossover and position != 'LONG':
-                        close_position('BUY')
+                   # LONG position logic
+                    if crossover and position != 'LONG':
+                        close_position('BUY', qty=QTY)
                         execute_trade('BUY')
+                            
+                    elif position == 'LONG' and status != 'FIRST_TAKE_PROFIT' and pnl >= 15.0:
+                        take_profit('SELL', qty=200)
+                        status = 'FIRST_TAKE_PROFIT'
+
+                    elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
+                        take_profit('SELL', qty=70)
+                        status = 'SECOND_TAKE_PROFIT'
+
                           
-                    # Логика для SHORT позиции
+                    # SHORT position logic
                     elif crossunder and position != 'SHORT':
-                        close_position('SELL')
-                        execute_trade('SELL')
+                            close_position('SELL', qty=QTY)
+                            execute_trade('SELL')
+                            
+                    elif position == 'SHORT' and status != 'FIRST_TAKE_PROFIT' and pnl >= 15.0:
+                            take_profit('BUY', qty=200)
+                            status = 'FIRST_TAKE_PROFIT'
+                    
+                    elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
+                        take_profit('BUY', qty=70)
+                        status = 'SECOND_TAKE_PROFIT'
                        
                     
-                        
+
                     # Вывод информации о состоянии
                     print(f"\n{datetime.now()}")
+                    print(f"Symbol: {SYMBOL}")
                     print(f"Position: {position}")
                     print(min_macd_dif)
                     
@@ -300,6 +334,7 @@ def main_loop():
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
                         print(f"MACD: {df['MACD'].iloc[-1]:.5f} | Signal: {df['Signal'].iloc[-1]:.5f}")
             
+
             # Пауза между итерациями
             elapsed = time.time() - start_time
             sleep_time = max(10 - elapsed, 1)
