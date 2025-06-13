@@ -4,12 +4,13 @@ import time
 from datetime import datetime
 from playsound3 import playsound
 
+from adx import calculate_adx
 from position import get_unrealized_pnl_percentage
 
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 60
+TIMEFRAME = 240
 QTY = 200
 
 session = HTTP(
@@ -294,6 +295,8 @@ def main_loop():
                     crossover, crossunder = check_crossover(df)
 
                     pnl = get_unrealized_pnl_percentage(SYMBOL, session)
+
+                    adx = calculate_adx(df)
                     
 
                     # LONG position logic
@@ -301,13 +304,14 @@ def main_loop():
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
                             
-                    elif position == 'LONG' and status != 'FIRST_TAKE_PROFIT' and pnl >= 15.0:
+                    elif position == 'LONG' and status == None and pnl >= 25.0:
                         take_profit('SELL', qty=120)
                         status = 'FIRST_TAKE_PROFIT'
 
-                    elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
+                    elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                         take_profit('SELL', qty=70)
                         status = 'SECOND_TAKE_PROFIT'
+
 
                           
                     # SHORT position logic
@@ -315,11 +319,11 @@ def main_loop():
                             close_position('SELL', qty=QTY)
                             execute_trade('SELL')
                             
-                    elif position == 'SHORT' and status != 'FIRST_TAKE_PROFIT' and pnl >= 15.0:
+                    elif position == 'SHORT' and status == None and pnl >= 25.0:
                             take_profit('BUY', qty=120)
                             status = 'FIRST_TAKE_PROFIT'
                     
-                    elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
+                    elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 4.0:
                         take_profit('BUY', qty=70)
                         status = 'SECOND_TAKE_PROFIT'
 
@@ -329,7 +333,8 @@ def main_loop():
                     print(f"\n{datetime.now()}")
                     print(f"Symbol: {SYMBOL}")
                     print(f"Position: {position}")
-                    print(min_macd_dif)
+                    print(f"Diff: {min_macd_dif}")
+                    print(f"ADX: {adx['adx'].values[-1]}")
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
