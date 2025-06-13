@@ -10,7 +10,7 @@ from position import get_unrealized_pnl_percentage
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 240
+TIMEFRAME = 60
 QTY = 200
 
 session = HTTP(
@@ -296,9 +296,9 @@ def main_loop():
 
                     pnl = get_unrealized_pnl_percentage(SYMBOL, session)
 
-                    # adx_df = calculate_adx(df, period=14)
-                    # adx = round(adx_df['adx'].values[-1], 4)
-                    # print(adx_df['adx'].values[-1])
+                    adx_df = calculate_adx(df, period=14)
+                    adx = round(adx_df['adx'].values[-1], 4)
+                    print(adx_df['adx'].values[-1])
                     
 
                     # LONG position logic
@@ -336,7 +336,7 @@ def main_loop():
                     print(f"Symbol: {SYMBOL}")
                     print(f"Position: {position}")
                     print(f"Diff: {min_macd_dif}")
-                    # print(f"ADX: {adx}")
+                    print(f"ADX: {adx}")
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")

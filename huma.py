@@ -4,12 +4,13 @@ import time
 from datetime import datetime
 from playsound3 import playsound
 
+from adx import calculate_adx
 from position import get_unrealized_pnl_percentage
 
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'HUMAUSDT'
-TIMEFRAME = 240
+TIMEFRAME = 60
 QTY = 300
 
 session = HTTP(
@@ -295,13 +296,17 @@ def main_loop():
 
                     pnl = get_unrealized_pnl_percentage(SYMBOL, session)
 
+                    adx_df = calculate_adx(df, period=14)
+                    adx = round(adx_df['adx'].values[-1], 4)
+                    print(adx_df['adx'].values[-1])
+
                     
                    # LONG position logic
-                    if crossover and position != 'LONG':
+                    if crossover and position != 'LONG' and adx >= 25.0:
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
                             
-                    elif position == 'LONG' and status != 'FIRST_TAKE_PROFIT' and pnl >= 15.0:
+                    elif position == 'LONG' and status == None and pnl >= 15.0:
                         take_profit('SELL', qty=200)
                         status = 'FIRST_TAKE_PROFIT'
 
@@ -311,11 +316,11 @@ def main_loop():
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT':
+                    elif crossunder and position != 'SHORT' and adx >= 25.0:
                             close_position('SELL', qty=QTY)
                             execute_trade('SELL')
                             
-                    elif position == 'SHORT' and status != 'FIRST_TAKE_PROFIT' and pnl >= 15.0:
+                    elif position == 'SHORT' and status == None and pnl >= 15.0:
                             take_profit('BUY', qty=200)
                             status = 'FIRST_TAKE_PROFIT'
                     
@@ -329,7 +334,8 @@ def main_loop():
                     print(f"\n{datetime.now()}")
                     print(f"Symbol: {SYMBOL}")
                     print(f"Position: {position}")
-                    print(min_macd_dif)
+                    print(f"Diff: {min_macd_dif}")
+                    print(f"ADX: {adx}")
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
