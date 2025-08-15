@@ -9,7 +9,7 @@ from position import get_unrealized_pnl_percentage
 
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
-SYMBOL = 'DOGEUSDT'
+SYMBOL = 'HUMAUSDT'
 TIMEFRAME = 60
 QTY = 100
 

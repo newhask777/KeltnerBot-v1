@@ -11,7 +11,7 @@ API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
 SYMBOL = 'DOGEUSDT'
 TIMEFRAME = 240
-QTY = 200
+QTY = 100
 
 session = HTTP(
     api_key=API_KEY,
@@ -19,7 +19,7 @@ session = HTTP(
 )
 
 position = None
-min_macd_dif = 0.0001
+min_macd_dif = 0.0005
 status = None
 
 last_trade_time = None
@@ -306,13 +306,13 @@ def main_loop():
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
                             
-                    elif position == 'LONG' and status == None and pnl >= 25.0:
-                        take_profit('SELL', qty=120)
-                        status = 'FIRST_TAKE_PROFIT'
+                    # elif position == 'LONG' and status == None and pnl >= 25.0:
+                    #     take_profit('SELL', qty=120)
+                    #     status = 'FIRST_TAKE_PROFIT'
 
-                    elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
-                        take_profit('SELL', qty=60)
-                        status = 'SECOND_TAKE_PROFIT'
+                    # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
+                    #     take_profit('SELL', qty=60)
+                    #     status = 'SECOND_TAKE_PROFIT'
 
 
                           
@@ -321,13 +321,13 @@ def main_loop():
                             close_position('SELL', qty=QTY)
                             execute_trade('SELL')
                             
-                    elif position == 'SHORT' and status == None and pnl >= 25.0:
-                            take_profit('BUY', qty=120)
-                            status = 'FIRST_TAKE_PROFIT'
+                    # elif position == 'SHORT' and status == None and pnl >= 25.0:
+                    #         take_profit('BUY', qty=120)
+                    #         status = 'FIRST_TAKE_PROFIT'
                     
-                    elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
-                        take_profit('BUY', qty=60)
-                        status = 'SECOND_TAKE_PROFIT'
+                    # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
+                    #     take_profit('BUY', qty=60)
+                    #     status = 'SECOND_TAKE_PROFIT'
 
 
                         

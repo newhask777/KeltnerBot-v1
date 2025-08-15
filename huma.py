@@ -9,9 +9,9 @@ from position import get_unrealized_pnl_percentage
 
 API_KEY = '3S8MoHSPOOJO56OX62'
 API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
-SYMBOL = 'HUMAUSDT'
-TIMEFRAME = 60
-QTY = 300
+SYMBOL = 'SPXUSDT'
+TIMEFRAME = 240
+QTY = 5
 
 session = HTTP(
     api_key=API_KEY,
@@ -19,7 +19,7 @@ session = HTTP(
 )
 
 position = None
-min_macd_dif = 0.0001
+min_macd_dif = 0.01
 status = None
 
 last_trade_time = None
@@ -297,36 +297,36 @@ def main_loop():
                     pnl = get_unrealized_pnl_percentage(SYMBOL, session)
 
                     adx_df = calculate_adx(df, period=14)
-                    adx = round(adx_df['adx'].values[-1], 4)
-                    print(adx_df['adx'].values[-1])
+                    adx = round(adx_df['adx'].values[-1] + 10.0, 4)
+                    print(adx_df['adx'].values[-1] + 10.0)
 
                     
                    # LONG position logic
-                    if crossover and position != 'LONG' and adx >= 25.0:
+                    if crossover and position != 'LONG':
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
                             
-                    elif position == 'LONG' and status == None and pnl >= 15.0:
-                        take_profit('SELL', qty=200)
-                        status = 'FIRST_TAKE_PROFIT'
+                    # elif position == 'LONG' and status == None and pnl >= 15.0:
+                    #     take_profit('SELL', qty=70)
+                    #     status = 'FIRST_TAKE_PROFIT'
 
-                    elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
-                        take_profit('SELL', qty=70)
-                        status = 'SECOND_TAKE_PROFIT'
+                    # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
+                    #     take_profit('SELL', qty=20)
+                    #     status = 'SECOND_TAKE_PROFIT'
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT' and adx >= 25.0:
+                    elif crossunder and position != 'SHORT':
                             close_position('SELL', qty=QTY)
                             execute_trade('SELL')
                             
-                    elif position == 'SHORT' and status == None and pnl >= 15.0:
-                            take_profit('BUY', qty=200)
-                            status = 'FIRST_TAKE_PROFIT'
+                    # elif position == 'SHORT' and status == None and pnl >= 15.0:
+                    #         take_profit('BUY', qty=70)
+                    #         status = 'FIRST_TAKE_PROFIT'
                     
-                    elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
-                        take_profit('BUY', qty=70)
-                        status = 'SECOND_TAKE_PROFIT'
+                    # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 30.0:
+                    #     take_profit('BUY', qty=20)
+                    #     status = 'SECOND_TAKE_PROFIT'
                        
                     
 
