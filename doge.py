@@ -7,11 +7,11 @@ from playsound3 import playsound
 from adx import calculate_adx
 from position import get_unrealized_pnl_percentage
 
-API_KEY = '3S8MoHSPOOJO56OX62'
-API_SECRET = 'lu5wq6HRiL7g7hE2ZF28AqHRfi3sWeVpSlUk'
+API_KEY = '3ma5P5asDiclhqinWj'
+API_SECRET = 'qVvZgiy4d8f9LQAhEuCnk593jXhEpcHYaJeO'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 240
-QTY = 100
+TIMEFRAME = 60
+QTY = 50
 
 session = HTTP(
     api_key=API_KEY,
@@ -296,9 +296,9 @@ def main_loop():
 
                     pnl = get_unrealized_pnl_percentage(SYMBOL, session)
 
-                    # adx_df = calculate_adx(df, period=14)
-                    # adx = round(adx_df['adx'].values[-1], 4)
-                    # print(adx_df['adx'].values[-1])
+                    adx_df = calculate_adx(df, period=14)
+                    adx = round(adx_df['adx'].values[-1], 4)
+                    print(adx_df['adx'].values[-1])
                     
 
                     # LONG position logic
@@ -306,8 +306,8 @@ def main_loop():
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
                             
-                    # elif position == 'LONG' and status == None and pnl >= 25.0:
-                    #     take_profit('SELL', qty=120)
+                    elif position == 'LONG' and status == None and pnl >= 10.0:
+                        take_profit('SELL', qty=QTY)
                     #     status = 'FIRST_TAKE_PROFIT'
 
                     # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
@@ -321,8 +321,8 @@ def main_loop():
                             close_position('SELL', qty=QTY)
                             execute_trade('SELL')
                             
-                    # elif position == 'SHORT' and status == None and pnl >= 25.0:
-                    #         take_profit('BUY', qty=120)
+                    elif position == 'SHORT' and status == None and pnl >= 10.0:
+                            take_profit('BUY', qty=QTY)
                     #         status = 'FIRST_TAKE_PROFIT'
                     
                     # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
