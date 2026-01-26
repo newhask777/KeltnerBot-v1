@@ -3,14 +3,23 @@ from pybit.unified_trading import HTTP
 import time
 from datetime import datetime
 from playsound3 import playsound
+import telebot
+import os
 
 from adx import calculate_adx
 from position import get_unrealized_pnl_percentage
+from supertrend import calculate_supertrend
 
-API_KEY = '3ma5P5asDiclhqinWj'
-API_SECRET = 'qVvZgiy4d8f9LQAhEuCnk593jXhEpcHYaJeO'
+TELEGRAM_BOT_TOKEN = '8099258606:AAEzDUSMpPSR8nEV1CUh1sIIcf7vDjkZUm0'  # Получите у @BotFather
+TELEGRAM_CHAT_ID = '5650732610'      # Получите у @userinfobot
+
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+
+
+API_KEY = 'NrAveBE01ihLBlMPAk'
+API_SECRET = '7qaKTSUzLU3kAACIv7snsV4bSUJHklqWbwlf'
 SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 60
+TIMEFRAME = 240
 QTY = 50
 
 session = HTTP(
@@ -271,6 +280,41 @@ def get_current_position():
     except Exception as e:
         print(f"Position check error: {str(e)}")
         return None
+    
+    
+def send_telegram_alert(adx, rsi):
+    """Отправка текущего состояния в Telegram"""
+    try:
+        message = (
+            f"📊 *Trade Update*\n"
+            f"Time: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+            f"Symbol: *{SYMBOL}*\n"
+            f"Position: `{position}`\n"
+            f"MACD Diff: `{min_macd_dif:.6f}`\n"
+            f"ADX: `{adx:.2f}`"
+            f"RSI: `{rsi}`"
+        )
+        bot.send_message(TELEGRAM_CHAT_ID, message, parse_mode='Markdown')
+    except Exception as e:
+        print(f"Telegram send error: {e}")
+
+def calculate_rsi(prices, period=14):
+   """Расчет RSI для ряда цен."""
+   deltas = prices.diff()  # Разница цен
+   gains = deltas.where(deltas > 0, 0)  # Значения роста
+   losses = (-deltas).where(deltas < 0, 0)  # Значения падения
+   # Первые средние значения (простое среднее)
+   avg_gain = gains.rolling(window=period, min_periods=period).mean()
+   avg_loss = losses.rolling(window=period, min_periods=period).mean()
+   # Сглаженное среднее для последующих значений
+   for i in range(period, len(prices)):
+     avg_gain.iloc[i] = (avg_gain.iloc[i-1] * (period - 1) + gains.iloc[i]) / period
+     avg_loss.iloc[i] = (avg_loss.iloc[i-1] * (period - 1) + losses.iloc[i]) / period
+   # Расчет RS и RSI
+   rs = avg_gain / avg_loss
+   rsi = 100 - (100 / (1 + rs))
+   return rsi
+
 
 
 def main_loop():
@@ -299,16 +343,38 @@ def main_loop():
                     adx_df = calculate_adx(df, period=14)
                     adx = round(adx_df['adx'].values[-1], 4)
                     print(adx_df['adx'].values[-1])
-                    
 
+                    rsi_df = calculate_rsi(df['close'], period=14)
+                    rsi = round(rsi_df.values[-1], 2)
+                    print(rsi)
+
+                    lookback = 10
+                    multiplier = 3
+
+                    df['supertrend'], df['uptrend'], df['downtrend'] = calculate_supertrend(
+                        df['high'], df['low'], df['close'], lookback, multiplier
+                    )
+
+                    # Определяем текущий тренд
+                    last_row = df.iloc[-1]
+                    if last_row['close'] > last_row['supertrend']:
+                        print(f"\nТекущий тренд: ВОСХОДЯЩИЙ (цена {last_row['close']} > SuperTrend {last_row['supertrend']})")
+                        trend = "Up - Long"
+                    else:
+                        print(f"\nТекущий тренд: НИСХОДЯЩИЙ (цена {last_row['close']} < SuperTrend {last_row['supertrend']})")
+                        trend = "Down - Short"
+
+
+                
                     # LONG position logic
-                    if crossover and position != 'LONG':
+                    if crossover and position != 'LONG' and adx >= 25 and trend == "Up - Long":
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
+                        send_telegram_alert(adx, rsi)
                             
-                    elif position == 'LONG' and status == None and pnl >= 10.0:
+                    elif position == 'LONG' and status == None and pnl >= 3.0:
                         take_profit('SELL', qty=QTY)
-                    #     status = 'FIRST_TAKE_PROFIT'
+                    #   status = 'FIRST_TAKE_PROFIT'
 
                     # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                     #     take_profit('SELL', qty=60)
@@ -317,13 +383,14 @@ def main_loop():
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT':
-                            close_position('SELL', qty=QTY)
-                            execute_trade('SELL')
+                    elif crossunder and position != 'SHORT' and adx >= 25 and trend == "Down - Short":
+                        close_position('SELL', qty=QTY)
+                        execute_trade('SELL')
+                        send_telegram_alert(adx, rsi)
                             
-                    elif position == 'SHORT' and status == None and pnl >= 10.0:
-                            take_profit('BUY', qty=QTY)
-                    #         status = 'FIRST_TAKE_PROFIT'
+                    elif position == 'SHORT' and status == None and pnl >= 3.0:
+                        take_profit('BUY', qty=QTY)
+                    #   status = 'FIRST_TAKE_PROFIT'
                     
                     # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                     #     take_profit('BUY', qty=60)
@@ -336,7 +403,12 @@ def main_loop():
                     print(f"Symbol: {SYMBOL}")
                     print(f"Position: {position}")
                     print(f"Diff: {min_macd_dif}")
-                    # print(f"ADX: {adx}")
+                    print(f"ADX: {adx}")
+                    print(f"RSI: {rsi}")
+                    print(f"Cупер тренд: {trend}")
+                    # print(f"SuperTrend: {supertrend}")
+                    # print(f"Uptrend: {uptrend}")
+                    # print(f"Downtrend: {downtrend}")
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
