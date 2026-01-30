@@ -7,7 +7,10 @@ import telebot
 import os
 
 from adx import calculate_adx
+from ema_100 import calculate_ema_100
 from position import get_unrealized_pnl_percentage
+from rsi import calculate_rsi_2
+from stoch_rsi import calculate_stoch_rsi
 from supertrend import calculate_supertrend
 
 TELEGRAM_BOT_TOKEN = '8099258606:AAEzDUSMpPSR8nEV1CUh1sIIcf7vDjkZUm0'  # Получите у @BotFather
@@ -18,8 +21,8 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 API_KEY = 'NrAveBE01ihLBlMPAk'
 API_SECRET = '7qaKTSUzLU3kAACIv7snsV4bSUJHklqWbwlf'
-SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 240
+SYMBOL = 'TRXUSDT'
+TIMEFRAME = 60
 QTY = 50
 
 session = HTTP(
@@ -100,18 +103,16 @@ def check_crossover(df):
     if above_zero:
         # Проверка пересечения вверх
         crossover = (
-            prev_macd < prev_signal and 
+            # prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif and
-            mid_macd > mid_signal  # Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif # Подтверждение в средней точке
         )
 
 
         crossunder = (
-            prev_macd > prev_signal and 
+            # prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif and
-            mid_macd < mid_signal  # Подтверждение в средней точке
+            (current_signal - current_macd) >= min_macd_dif # Подтверждение в средней точке
         )
 
         print('above')
@@ -123,17 +124,15 @@ def check_crossover(df):
         min_macd_dif = -min_macd_dif
 
         crossover = (
-            prev_macd < prev_signal and 
+            # prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif and
-            mid_macd > mid_signal  # Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif # Подтверждение в средней точке
         )
 
         crossunder = (
-            prev_macd > prev_signal and 
+            # prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif and
-            mid_macd < mid_signal  # Подтверждение в средней точке
+            (current_signal - current_macd) >= min_macd_dif # Подтверждение в средней точке
         )
 
         print('under')
@@ -339,6 +338,8 @@ def main_loop():
                     crossover, crossunder = check_crossover(df)
 
                     pnl = get_unrealized_pnl_percentage(SYMBOL, session)
+                    if pnl == None:
+                        pnl = 0.0
 
                     adx_df = calculate_adx(df, period=14)
                     adx = round(adx_df['adx'].values[-1], 4)
@@ -348,8 +349,17 @@ def main_loop():
                     rsi = round(rsi_df.values[-1], 2)
                     print(rsi)
 
+                    rsi_2 = calculate_rsi_2(df['close'].values, period=14)
+                    #rsi_2_v = round(rsi_df.values[-1], 2)
+                    stoch_rsi, stoch_k, stoch_d = calculate_stoch_rsi(rsi_2)
+                    print(stoch_k[-1])
+
+                    ema_100_df = calculate_ema_100(df)
+                    ema_100 = round(ema_100_df["ema_100"].values[-1],5)
+
                     lookback = 10
                     multiplier = 3
+                    trend = None
 
                     df['supertrend'], df['uptrend'], df['downtrend'] = calculate_supertrend(
                         df['high'], df['low'], df['close'], lookback, multiplier
@@ -359,15 +369,15 @@ def main_loop():
                     last_row = df.iloc[-1]
                     if last_row['close'] > last_row['supertrend']:
                         print(f"\nТекущий тренд: ВОСХОДЯЩИЙ (цена {last_row['close']} > SuperTrend {last_row['supertrend']})")
-                        trend = "Up - Long"
+                        trend = "Long"
                     else:
                         print(f"\nТекущий тренд: НИСХОДЯЩИЙ (цена {last_row['close']} < SuperTrend {last_row['supertrend']})")
-                        trend = "Down - Short"
+                        trend = "Short"
 
 
                 
                     # LONG position logic
-                    if crossover and position != 'LONG' and adx >= 25 and trend == "Up - Long":
+                    if crossover and position != 'LONG' and adx >= 20 and trend == "Long" and stoch_k[-1] > 80 and ema_100 > df['uptrend'].values[-3]: # and ema_100 < trend_value and stoch_k > 80 
                         close_position('BUY', qty=QTY)
                         execute_trade('BUY')
                         send_telegram_alert(adx, rsi)
@@ -383,7 +393,7 @@ def main_loop():
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT' and adx >= 25 and trend == "Down - Short":
+                    elif crossunder and position != 'SHORT' and adx >= 20 and trend == "Short" and stoch_k[-1] < 20 and ema_100 < df['downtrend'].values[-3]:
                         close_position('SELL', qty=QTY)
                         execute_trade('SELL')
                         send_telegram_alert(adx, rsi)
@@ -406,13 +416,16 @@ def main_loop():
                     print(f"ADX: {adx}")
                     print(f"RSI: {rsi}")
                     print(f"Cупер тренд: {trend}")
-                    # print(f"SuperTrend: {supertrend}")
-                    # print(f"Uptrend: {uptrend}")
-                    # print(f"Downtrend: {downtrend}")
+                    print(f"UpperTrend: {df['uptrend'].values[-1]}")
+                    print(f"DownTrend: {df['downtrend'].values[-1]}")
+                    print(f"Stochastick RSI fast: {stoch_k[1]}")
+                    print(f"Stochastick RSI slow: {stoch_d[-1]}")
+                    print(f"EMA 100: {ema_100}")
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
                         print(f"MACD: {df['MACD'].iloc[-1]:.5f} | Signal: {df['Signal'].iloc[-1]:.5f}")
+                        # print(f"Middle MACD: {df['MACD'].iloc[-2]:.5f} | Middle Signal: {df['Signal'].iloc[-2]:5f}")
             
             # Пауза между итерациями
             elapsed = time.time() - start_time
