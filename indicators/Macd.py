@@ -13,8 +13,7 @@ def calculate_macd(df):
     return df
 
 
-def check_crossover(df):
-    global min_macd_dif
+def check_crossover(df, min_macd_dif):
     """Проверка пересечения MACD и Signal линии с учетом положения гистограммы"""
     if df is None or len(df) < 3:
         return False, False

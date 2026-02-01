@@ -16,8 +16,9 @@ from Indicators.macd import calculate_macd, check_crossover
 from Indicators.adx import calculate_adx
 from Indicators.rsi_2 import calculate_rsi_2
 from Indicators.stoch_rsi import calculate_stoch_rsi
-from Indicators.supertrend import calculate_supertrend
 from Indicators.ema_100 import calculate_ema_100
+from Indicators.supertrend import calculate_supertrend
+
 
 
 # Bybit api tokens
@@ -40,7 +41,7 @@ session = HTTP(
 
 
 # Possition settings params
-symbol = 'TRXUSDT'
+symbol = 'TONUSDT'
 timeframe = 60
 qty = 50
 min_macd_dif = 0.0005
@@ -68,7 +69,7 @@ def main_loop():
                 
                 if df is not None:
 
-                    crossover, crossunder = check_crossover(df)
+                    crossover, crossunder = check_crossover(df, min_macd_dif)
 
                     pnl = get_unrealized_pnl_percentage(session, symbol)
                     if pnl == None:
@@ -110,7 +111,7 @@ def main_loop():
 
                 
                     # LONG position logic
-                    if crossover and position != 'LONG' and adx >= 20 and trend == "Long" and stoch_k[-1] > 80 and ema_100 > df['uptrend'].values[-3]: # and ema_100 < trend_value and stoch_k > 80 
+                    if crossover and position != 'LONG' and adx >= 20 and trend == "Long" and stoch_k[-1] > 80 and df['uptrend'].values[-1] < ema_100: # and ema_100 < trend_value and stoch_k > 80 
                         close_position('BUY', qty=qty)
                         execute_trade('BUY')
                         send_telegram_alert(adx, rsi)
@@ -126,7 +127,7 @@ def main_loop():
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT' and adx >= 20 and trend == "Short" and stoch_k[-1] < 20 and ema_100 < df['downtrend'].values[-3]:
+                    elif crossunder and position != 'SHORT' and adx >= 20 and trend == "Short" and stoch_k[-1] < 20 and df['downtrend'].values[-1] > ema_100:
                         close_position('SELL', qty=qty)
                         execute_trade('SELL')
                         send_telegram_alert(adx, rsi)
