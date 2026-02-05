@@ -1,6 +1,7 @@
 import pandas as pd
 from Bybit.trade import execute_trade, take_profit
 from Indicators.rsi import calculate_rsi
+from Indicators.sar import calculate_sar
 from Telegram.message import send_telegram_alert
 from pybit.unified_trading import HTTP
 import time
@@ -41,7 +42,7 @@ session = HTTP(
 
 
 # Possition settings params
-symbol = 'TONUSDT'
+symbol = 'DOGEUSDT'
 timeframe = 60
 qty = 50
 min_macd_dif = 0.0005
@@ -107,6 +108,12 @@ def main_loop():
                     else:
                         print(f"\nТекущий тренд: НИСХОДЯЩИЙ (цена {last_row['close']} < SuperTrend {last_row['supertrend']})")
                         trend = "Short"
+
+                    sar_trend = calculate_sar(df, 0.02, 0.2)
+                    print(f"SAR Trend: {sar_trend[-1]}")
+                    # print(f"SAR: {sar[-1]}")
+                    # print(ep[-1])
+                    # print(af[-1])
 
 
                 

@@ -39,16 +39,18 @@ def check_crossover(df, min_macd_dif):
     if above_zero:
         # Проверка пересечения вверх
         crossover = (
-            # prev_macd < prev_signal and 
+            prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif # Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif and
+            mid_macd > mid_signal # Подтверждение в средней точке
         )
 
 
         crossunder = (
-            # prev_macd > prev_signal and 
+            prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif # Подтверждение в средней точке
+            (current_signal - current_macd) >= min_macd_dif and
+            mid_macd < mid_signal # Подтверждение в средней точке  
         )
 
         print('above')
@@ -60,15 +62,17 @@ def check_crossover(df, min_macd_dif):
         min_macd_dif = -min_macd_dif
 
         crossover = (
-            # prev_macd < prev_signal and 
+            prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif # Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif and 
+            mid_macd > mid_signal# Подтверждение в средней точке
         )
 
         crossunder = (
-            # prev_macd > prev_signal and 
+            prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif # Подтверждение в средней точке
+            (current_signal - current_macd) >= min_macd_dif and 
+            mid_macd < mid_signal# Подтверждение в средней точке
         )
 
         print('under')
