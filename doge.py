@@ -155,7 +155,7 @@ def main_loop():
                     print(f"Position: {position}")
                     print(f"Diff: {min_macd_dif}")
                     print(f"ADX: {adx}")
-                    print(f"RSI: {rsi}")
+                    #print(f"RSI: {rsi}")
                     print(f"Cупер тренд: {trend}")
                     print(f"UpperTrend: {df['uptrend'].values[-1]}")
                     print(f"DownTrend: {df['downtrend'].values[-1]}")
