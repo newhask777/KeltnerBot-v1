@@ -18,9 +18,9 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 API_KEY = 'NrAveBE01ihLBlMPAk'
 API_SECRET = '7qaKTSUzLU3kAACIv7snsV4bSUJHklqWbwlf'
-SYMBOL = 'DOGEUSDT'
-TIMEFRAME = 240
-QTY = 50
+symbol = 'DOGEUSDT'
+timeframe = 240
+qty = 50
 
 session = HTTP(
     api_key=API_KEY,
@@ -37,8 +37,8 @@ def get_historical_data():
     """Получение и обработка исторических данных"""
     resp = session.get_kline(
         category="linear",
-        symbol=SYMBOL,
-        interval=TIMEFRAME,
+        symbol=symbol,
+        interval=timeframe,
         limit=200
     )
     
@@ -159,20 +159,20 @@ def execute_trade(signal):
     try:
         params = {
             "category": "linear",
-            "symbol": SYMBOL,
+            "symbol": symbol,
             "orderType": "Market",
-            "qty": str(QTY),
+            "qty": str(qty),
             "timeInForce": "GTC"
         }
         
         if signal == 'BUY':
-            print(f"{datetime.now()} - BUY {QTY} USDT")
+            print(f"{datetime.now()} - BUY {qty} USDT")
             session.place_order(**params, side="Buy")
             position = 'LONG'
             play()
             
         elif signal == 'SELL':
-            print(f"{datetime.now()} - SELL {QTY} USDT")
+            print(f"{datetime.now()} - SELL {qty} USDT")
             session.place_order(**params, side="Sell")
             position = 'SHORT'
             play()
@@ -195,7 +195,7 @@ def close_position(signal, qty=None):
     try:
         params = {
             "category": "linear",
-            "symbol": SYMBOL,
+            "symbol": symbol,
             "orderType": "Market",
             "qty": str(qty),
             "timeInForce": "GTC",
@@ -203,14 +203,14 @@ def close_position(signal, qty=None):
         }
         
         if signal == 'BUY' and position == 'SHORT':
-            print(f"{datetime.now()} - CLOSE SHORT {QTY} USDT")
+            print(f"{datetime.now()} - CLOSE SHORT {qty} USDT")
             session.place_order(**params, side="Buy")
             # signal = 'BUY'
             position = None
             play()
             
         elif signal == 'SELL' and position == 'LONG':
-            print(f"{datetime.now()} - CLOSE LONG {QTY} USDT")
+            print(f"{datetime.now()} - CLOSE LONG {qty} USDT")
             session.place_order(**params, side="Sell")
             # signal = 'SELL'
             position = None
@@ -234,7 +234,7 @@ def take_profit(signal, qty=None):
     try:
         params = {
             "category": "linear",
-            "symbol": SYMBOL,
+            "symbol": symbol,
             "orderType": "Market",
             "qty": str(qty),
             "timeInForce": "GTC",
@@ -242,12 +242,12 @@ def take_profit(signal, qty=None):
         }
         
         if position == 'LONG':
-            print(f"{datetime.now()} - TAKE PROFIT {QTY} USDT")
+            print(f"{datetime.now()} - TAKE PROFIT {qty} USDT")
             session.place_order(**params, side="Sell")
             play()
         
         elif position == 'SHORT':
-            print(f"{datetime.now()} - TAKE PROFIT {QTY} USDT")
+            print(f"{datetime.now()} - TAKE PROFIT {qty} USDT")
             session.place_order(**params, side="Buy")
             play()
             
@@ -270,7 +270,7 @@ def get_current_position():
     try:
         response = session.get_positions(
             category="linear",
-            symbol=SYMBOL,
+            symbol=symbol,
         )
         positions = response.get('result', {}).get('list', [])
         for pos in positions:
@@ -288,7 +288,7 @@ def send_telegram_alert(adx, rsi):
         message = (
             f"📊 *Trade Update*\n"
             f"Time: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
-            f"Symbol: *{SYMBOL}*\n"
+            f"Symbol: *{symbol}*\n"
             f"Position: `{position}`\n"
             f"MACD Diff: `{min_macd_dif:.6f}`\n"
             f"ADX: `{adx:.2f}`"
@@ -318,27 +318,29 @@ def calculate_rsi(prices, period=14):
 
 
 def main_loop():
-    global position
     global min_macd_dif
+    global position
     global status
     
     # Инициализация позиции
-    position = get_current_position()
+    position = get_current_position(session)
     print(f"Initial position: {position}")
     
     while True:
         try:
             start_time = time.time()
-            df = get_historical_data()
+            df = get_historical_data(session)
             
             if df is not None:
                 df = calculate_macd(df)
                 
                 if df is not None:
 
-                    crossover, crossunder = check_crossover(df)
+                    crossover, crossunder = check_crossover(df, min_macd_dif)
 
-                    pnl = get_unrealized_pnl_percentage(SYMBOL, session)
+                    pnl = get_unrealized_pnl_percentage(session)
+                    if pnl == None:
+                        pnl = 0.0
 
                     adx_df = calculate_adx(df, period=14)
                     adx = round(adx_df['adx'].values[-1], 4)
@@ -348,8 +350,17 @@ def main_loop():
                     rsi = round(rsi_df.values[-1], 2)
                     print(rsi)
 
+                    # rsi_2 = calculate_rsi_2(df['close'].values, period=14)
+                    # #rsi_2_v = round(rsi_df.values[-1], 2)
+                    # stoch_rsi, stoch_k, stoch_d = calculate_stoch_rsi(rsi_2)
+                    # print(stoch_k[-1])
+
+                    # ema_100_df = calculate_ema_100(df)
+                    # ema_100 = round(ema_100_df["ema_100"].values[-1],5)
+
                     lookback = 10
                     multiplier = 3
+                    trend = None
 
                     df['supertrend'], df['uptrend'], df['downtrend'] = calculate_supertrend(
                         df['high'], df['low'], df['close'], lookback, multiplier
@@ -359,22 +370,29 @@ def main_loop():
                     last_row = df.iloc[-1]
                     if last_row['close'] > last_row['supertrend']:
                         print(f"\nТекущий тренд: ВОСХОДЯЩИЙ (цена {last_row['close']} > SuperTrend {last_row['supertrend']})")
-                        trend = "Up - Long"
+                        trend = "Long"
                     else:
                         print(f"\nТекущий тренд: НИСХОДЯЩИЙ (цена {last_row['close']} < SuperTrend {last_row['supertrend']})")
-                        trend = "Down - Short"
+                        trend = "Short"
+
+                    # sar_trend = calculate_sar(df, 0.02, 0.2)
+                    # print(f"SAR Trend: {sar_trend[-1]}")
+                    # print(f"SAR: {sar[-1]}")
+                    # print(ep[-1])
+                    # print(af[-1])
 
 
                 
                     # LONG position logic
-                    if crossover and position != 'LONG' and adx >= 25 and trend == "Up - Long":
-                        close_position('BUY', qty=QTY)
+                    if crossover and position != 'LONG' and adx >= 15 and trend == "Long": # and ema_100 < trend_value and stoch_k > 80 
+                        close_position('BUY', qty=qty)
                         execute_trade('BUY')
+                        status = "Long"
                         send_telegram_alert(adx, rsi)
                             
-                    elif position == 'LONG' and status == None and pnl >= 3.0:
-                        take_profit('SELL', qty=QTY)
-                    #   status = 'FIRST_TAKE_PROFIT'
+                    elif position == 'LONG' and status == None and pnl >= 10.0:
+                        take_profit('SELL', qty=qty)
+                        status = 'Long take profit'
 
                     # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                     #     take_profit('SELL', qty=60)
@@ -383,14 +401,21 @@ def main_loop():
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT' and adx >= 25 and trend == "Down - Short":
-                        close_position('SELL', qty=QTY)
+                    elif crossunder and position != 'SHORT' and adx >= 15 and trend == "Short":
+                        close_position('SELL', qty=qty)
                         execute_trade('SELL')
+                        status = "Short"
                         send_telegram_alert(adx, rsi)
                             
-                    elif position == 'SHORT' and status == None and pnl >= 3.0:
-                        take_profit('BUY', qty=QTY)
+                    elif position == 'SHORT' and status == None and pnl >= 10.0:
+                        take_profit('BUY', qty=qty)
+                        status = "Short take profit"
                     #   status = 'FIRST_TAKE_PROFIT'
+
+                    # elif crossunder and position != 'SHORT' and status == "Long":
+                    #     execute_trade('SELL')
+                    #     status = "Short"
+                    #     send_telegram_alert(adx, rsi)
                     
                     # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                     #     take_profit('BUY', qty=60)
@@ -400,23 +425,24 @@ def main_loop():
                         
                     # Вывод информации о состоянии
                     print(f"\n{datetime.now()}")
-                    print(f"Symbol: {SYMBOL}")
+                    print(f"Symbol: {symbol}")
                     print(f"Position: {position}")
                     print(f"Diff: {min_macd_dif}")
                     print(f"ADX: {adx}")
-                    print(f"RSI: {rsi}")
+                    #print(f"RSI: {rsi}")
                     print(f"Cупер тренд: {trend}")
-                    # print(f"SuperTrend: {supertrend}")
-                    # print(f"Uptrend: {uptrend}")
-                    # print(f"Downtrend: {downtrend}")
+                    print(f"UpperTrend: {df['uptrend'].values[-1]}")
+                    print(f"DownTrend: {df['downtrend'].values[-1]}")
+                    # print(f"Stochastick RSI fast: {stoch_k[1]}")
+                    # print(f"Stochastick RSI slow: {stoch_d[-1]}")
+                    # print(f"EMA 100: {ema_100}")
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
                         print(f"MACD: {df['MACD'].iloc[-1]:.5f} | Signal: {df['Signal'].iloc[-1]:.5f}")
+                        # print(f"Middle MACD: {df['MACD'].iloc[-2]:.5f} | Middle Signal: {df['Signal'].iloc[-2]:5f}")
             
             # Пауза между итерациями
-            elapsed = time.time() - start_time
-            sleep_time = max(10 - elapsed, 1)
             time.sleep(1)
             
         except KeyboardInterrupt:
