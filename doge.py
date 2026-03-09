@@ -23,8 +23,8 @@ from Indicators.supertrend import calculate_supertrend
 
 
 # Bybit api tokens
-API_KEY = 'NrAveBE01ihLBlMPAk'
-API_SECRET = '7qaKTSUzLU3kAACIv7snsV4bSUJHklqWbwlf'
+API_KEY = 'xrWmLvEmztUviQnI4p'
+API_SECRET = 'nbw2VebCc0SOTvCBjHEnTt4FBjY6BayzEZWq'
 
 
 # Telegram api tokens
@@ -43,8 +43,8 @@ session = HTTP(
 
 # Possition settings params
 symbol = 'DOGEUSDT'
-timeframe = 60
-qty = 50
+timeframe = 240
+qty = 100
 min_macd_dif = 0.0005
 position = None
 status = None
@@ -118,14 +118,15 @@ def main_loop():
 
                 
                     # LONG position logic
-                    if crossover and position != 'LONG' and adx >= 20 and trend == "Long" and stoch_k[-1] > 80 and df['uptrend'].values[-1] < ema_100: # and ema_100 < trend_value and stoch_k > 80 
+                    if crossover and position != 'LONG' and adx >= 15 and trend == "Long": # and ema_100 < trend_value and stoch_k > 80 
                         close_position('BUY', qty=qty)
                         execute_trade('BUY')
+                        status = "Long"
                         send_telegram_alert(adx, rsi)
                             
-                    elif position == 'LONG' and status == None and pnl >= 3.0:
+                    elif position == 'LONG' and status == None and pnl >= 10.0:
                         take_profit('SELL', qty=qty)
-                    #   status = 'FIRST_TAKE_PROFIT'
+                        status = 'Long take profit'
 
                     # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                     #     take_profit('SELL', qty=60)
@@ -134,14 +135,21 @@ def main_loop():
 
                           
                     # SHORT position logic
-                    elif crossunder and position != 'SHORT' and adx >= 20 and trend == "Short" and stoch_k[-1] < 20 and df['downtrend'].values[-1] > ema_100:
+                    elif crossunder and position != 'SHORT' and adx >= 15 and trend == "Short":
                         close_position('SELL', qty=qty)
                         execute_trade('SELL')
+                        status = "Short"
                         send_telegram_alert(adx, rsi)
                             
-                    elif position == 'SHORT' and status == None and pnl >= 3.0:
+                    elif position == 'SHORT' and status == None and pnl >= 10.0:
                         take_profit('BUY', qty=qty)
+                        status = "Short take profit"
                     #   status = 'FIRST_TAKE_PROFIT'
+
+                    # elif crossunder and position != 'SHORT' and status == "Long":
+                    #     execute_trade('SELL')
+                    #     status = "Short"
+                    #     send_telegram_alert(adx, rsi)
                     
                     # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
                     #     take_profit('BUY', qty=60)
