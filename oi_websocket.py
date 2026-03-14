@@ -8,6 +8,7 @@ from pybit.unified_trading import HTTP, WebSocket
 TESTNET = False
 CATEGORY = "linear"
 LOOKBACK_MINUTES = 15
+OI_INTERVAL = "5min"
 TOP_N = 10
 UPDATE_INTERVAL = 30
 
@@ -16,14 +17,17 @@ price_history = {}
 lock = threading.Lock()
 
 def init_historical_oi(symbols):
+    """Загружаем историю OI через REST."""
     rest_session = HTTP(testnet=TESTNET)
+    limit = (LOOKBACK_MINUTES // 5) + 5
+
     for sym in symbols:
         try:
             resp = rest_session.get_open_interest(
                 category=CATEGORY,
                 symbol=sym,
-                intervalTime="1",
-                limit=LOOKBACK_MINUTES
+                intervalTime=OI_INTERVAL,
+                limit=limit
             )
             if resp["retCode"] == 0:
                 items = resp["result"]["list"]
@@ -35,9 +39,10 @@ def init_historical_oi(symbols):
                         oi_history[sym].append((ts, oi))
             time.sleep(0.1)
         except Exception as e:
-            print(f"Ошибка инициализации OI для {sym}: {e}")
+            print(f"Ошибка загрузки OI для {sym}: {e}")
 
 def handle_oi_message(message):
+    """Обработчик входящих обновлений Open Interest из WebSocket."""
     if not message or "data" not in message:
         return
     for item in message["data"]:
@@ -50,6 +55,7 @@ def handle_oi_message(message):
             oi_history[sym].append((ts, oi))
 
 def handle_ticker_message(message):
+    """Обработчик тикеров."""
     if not message or "data" not in message:
         return
     data = message["data"]
@@ -135,20 +141,25 @@ def main():
     print("Загружаем начальные данные OI...")
     init_historical_oi(symbols)
 
-    # Исправленный блок WebSocket с subscribe
+    # WebSocket подключение с channel_type
     ws = WebSocket(testnet=TESTNET, channel_type="linear")
 
+    # Подписка на Open Interest через subscribe с правильным форматом топика
     chunk_size = 10
     for i in range(0, len(symbols), chunk_size):
         chunk = symbols[i:i+chunk_size]
-        topics_oi = [f"openInterest.{CATEGORY}.{sym}" for sym in chunk]
-        ws.subscribe(topics=topics_oi, callback=handle_oi_message)
+        for sym in chunk:
+            # Формируем правильный топик: openInterest.linear.SYMBOL
+            topic = f"openInterest.{CATEGORY}.{sym}"
+            ws.subscribe(topic, handle_oi_message)
         time.sleep(0.5)
 
+    # Подписка на тикеры
     for i in range(0, len(symbols), chunk_size):
         chunk = symbols[i:i+chunk_size]
-        topics_ticker = [f"tickers.{CATEGORY}.{sym}" for sym in chunk]
-        ws.subscribe(topics=topics_ticker, callback=handle_ticker_message)
+        for sym in chunk:
+            topic = f"tickers.{CATEGORY}.{sym}"
+            ws.subscribe(topic, handle_ticker_message)
         time.sleep(0.5)
 
     printer = threading.Thread(target=periodic_print, daemon=True)
