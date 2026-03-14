@@ -327,18 +327,13 @@ def main():
     Основная функция для запуска сканера
     """
     # Инициализация сканера (для публичных данных API ключи не обязательны)
-    scanner = RsiDivergenceScanner(testnet=True)
+    scanner = RsiDivergenceScanner(testnet=False)
     
     # Список популярных торговых пар для сканирования
     symbols = [
-        'BTCUSDT',
-        'ETHUSDT',
-        'BNBUSDT',
-        'SOLUSDT',
-        'XRPUSDT',
         'DOGEUSDT',
-        'ADAUSDT',
-        'AVAXUSDT'
+        'HUMAUSDT',
+        'MNTUSDT'
     ]
     
     # Параметры сканирования
