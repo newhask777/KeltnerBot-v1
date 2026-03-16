@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Мониторинг крупных ликвидаций на Bybit через прямой WebSocket (без pybit).
+Мониторинг крупных ликвидаций на Bybit через WebSocket.
+Использует официальный топик allLiquidation.*.
 Отслеживаются все линейные (USDT) и инверсные (USD) контракты.
 Порог: $20 000. Отправка в Telegram.
+С поддержкой ping для сохранения соединения.
 """
 
 import json
@@ -17,7 +19,7 @@ import websocket
 # ================== НАСТРОЙКИ ==================
 TELEGRAM_TOKEN = "8756686910:AAHzGGQZYWvNB-3uiBPFHzzKUXux7HvSStg"
 TELEGRAM_CHAT_ID = "5650732610"
-LIQUIDATION_THRESHOLD_USD = 20000
+LIQUIDATION_THRESHOLD_USD = 5000
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,14 +29,12 @@ logger = logging.getLogger(__name__)
 # ===============================================
 
 # Bybit WebSocket URL для публичных данных (v5)
-# Для linear (USDT) и inverse (USD) используются разные URL
 WEBSOCKET_URLS = {
     "linear": "wss://stream.bybit.com/v5/public/linear",
     "inverse": "wss://stream.bybit.com/v5/public/inverse"
 }
 
 def send_telegram_message(text: str) -> None:
-    """Отправка сообщения в Telegram."""
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -47,13 +47,16 @@ def send_telegram_message(text: str) -> None:
         logger.error(f"Failed to send Telegram message: {e}")
 
 def on_message(ws, message):
-    """Обработчик входящих сообщений WebSocket."""
     try:
         data = json.loads(message)
-        if "topic" not in data or data.get("type") == "snapshot":
+        # Игнорируем служебные сообщения (pong, ответ на подписку)
+        if data.get("op") in ["pong", "subscribe"]:
             return
 
-        # Данные могут быть в поле "data" (список или объект)
+        # Проверяем, что это данные о ликвидациях
+        if not data.get("topic", "").startswith("allLiquidation."):
+            return
+
         items = data.get("data", [])
         if not items:
             return
@@ -62,14 +65,23 @@ def on_message(ws, message):
             items = [items]
 
         for liq in items:
-            symbol = liq.get("symbol", "N/A")
-            side = liq.get("side", "N/A").upper()
-            price = liq.get("price", "N/A")
-            size = liq.get("size", "N/A")
-            usd_value = liq.get("usdValue", 0)
+            symbol = liq.get("s", "N/A")
+            side = liq.get("S", "N/A").upper()  # "Buy" или "Sell"
+            size = liq.get("v", "N/A")
+            price = liq.get("p", "N/A")
+            timestamp = liq.get("T", "N/A")
 
             try:
-                usd_value = float(usd_value)
+                size_num = float(size)
+                price_num = float(price)
+
+                # Определяем тип канала по URL WebSocket
+                if "linear" in ws.url:
+                    # Для USDT-контрактов: сумма = количество контрактов * цену
+                    usd_value = size_num * price_num
+                else:  # inverse
+                    # Для инверсных контрактов размер уже в USD (согласно документации)
+                    usd_value = size_num
             except (TypeError, ValueError):
                 usd_value = 0
 
@@ -79,9 +91,9 @@ def on_message(ws, message):
                     f"Символ: {symbol}\n"
                     f"Сторона: {side}\n"
                     f"Цена: {price} USDT\n"
-                    f"Размер: {size}\n"
-                    f"Сумма: ${usd_value:,.2f}\n"
-                    f"Время: {liq.get('timestamp', 'N/A')}"
+                    f"Размер (контракты): {size}\n"
+                    f"Сумма (USD): ${usd_value:,.2f}\n"
+                    f"Время (мс): {timestamp}"
                 )
                 logger.info(f"Large liquidation: {symbol} ${usd_value:,.2f}")
                 send_telegram_message(msg)
@@ -96,16 +108,14 @@ def on_close(ws, close_status_code, close_msg):
     logger.warning("WebSocket closed")
 
 def on_open(ws):
-    """При открытии соединения подписываемся на канал ликвидаций для всех символов."""
     subscribe_msg = {
         "op": "subscribe",
-        "args": ["liquidation"]
+        "args": ["allLiquidation.*"]  # Подписка на все ликвидации
     }
     ws.send(json.dumps(subscribe_msg))
-    logger.info(f"Subscribed to liquidation on {ws.url}")
+    logger.info(f"Subscribed to allLiquidation.* on {ws.url}")
 
 def run_websocket(channel_type: str):
-    """Запускает WebSocket для указанного типа канала."""
     ws_url = WEBSOCKET_URLS[channel_type]
     ws = websocket.WebSocketApp(
         ws_url,
@@ -114,10 +124,10 @@ def run_websocket(channel_type: str):
         on_error=on_error,
         on_close=on_close
     )
-    # Запуск в бесконечном цикле с авто-переподключением
     while True:
         try:
-            ws.run_forever()
+            # Отправляем ping каждые 20 секунд, ждём pong 10 секунд
+            ws.run_forever(ping_interval=20, ping_timeout=10)
         except Exception as e:
             logger.error(f"WebSocket {channel_type} error: {e}")
         time.sleep(5)  # пауза перед переподключением
@@ -127,9 +137,8 @@ def main():
         logger.error("Please set TELEGRAM_TOKEN and TELEGRAM_CHAT_ID in the script.")
         return
 
-    logger.info(f"Starting Bybit liquidation monitor (threshold = ${LIQUIDATION_THRESHOLD_USD})")
+    logger.info(f"Starting Bybit liquidation monitor with official topic 'allLiquidation.*' (threshold = ${LIQUIDATION_THRESHOLD_USD})")
 
-    # Запускаем два потока: для linear и inverse каналов
     threads = []
     for channel in ["linear", "inverse"]:
         t = threading.Thread(target=run_websocket, args=(channel,), daemon=True)
@@ -137,7 +146,6 @@ def main():
         threads.append(t)
         logger.info(f"Started thread for {channel}")
 
-    # Держим главный поток живым
     try:
         while True:
             time.sleep(1)
