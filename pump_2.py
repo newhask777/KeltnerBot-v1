@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import time
+import requests
 from collections import defaultdict, deque
 from pybit.unified_trading import WebSocket
 import logging
@@ -9,7 +10,7 @@ import logging
 TELEGRAM_BOT_TOKEN = "8552891773:AAEpqiz89xA7m1dVubNggcKR2PFe1OBLYRw"          # Токен бота Telegram
 TELEGRAM_CHAT_ID = "5650732610"              # ID чата для отправки сообщений
 PUMP_THRESHOLD = 2.0                            # Порог пампа в процентах (например, 5%)
-TIME_WINDOW = 120                              # Окно в секундах, за которое анализируется изменение
+TIME_WINDOW = 60                                 # Окно в секундах, за которое анализируется изменение
 COOLDOWN_SECONDS = 300                            # Задержка между уведомлениями по одной монете (сек)
 # -------------------------------------------------
 
@@ -41,21 +42,23 @@ class BybitPumpScanner:
             logger.error(f"Исключение при получении списка инструментов: {e}")
             return []
 
+    import requests  # добавьте в начало
+
     async def send_telegram_message(self, message):
-        """Отправляет сообщение в Telegram."""
+        """Отправляет сообщение в Telegram через синхронный requests в потоке."""
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {
             'chat_id': TELEGRAM_CHAT_ID,
             'text': message,
             'parse_mode': 'HTML'
         }
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(url, json=payload) as resp:
-                    if resp.status != 200:
-                        logger.error(f"Ошибка отправки в Telegram: {await resp.text()}")
-            except Exception as e:
-                logger.error(f"Ошибка при отправке в Telegram: {e}")
+        try:
+            # Запускаем синхронный requests в отдельном потоке
+            response = await asyncio.to_thread(requests.post, url, json=payload, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"Ошибка отправки в Telegram: {response.text}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке в Telegram: {e}")
 
     def check_pump(self, symbol, current_price):
         """Проверяет, был ли памп за последние TIME_WINDOW секунд."""

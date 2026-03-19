@@ -83,4 +83,4 @@ def check_crossover(df, min_macd_dif):
 
 
         
-    return crossover, crossunder
+    return crossover, crossunder, above_zero, under_zero

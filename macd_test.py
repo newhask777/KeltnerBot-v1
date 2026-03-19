@@ -6,7 +6,7 @@ from pybit.unified_trading import HTTP
 
 # ========== НАСТРОЙКИ ==========
 BYBIT_CATEGORY = "linear"          # spot, linear, inverse
-TIMEFRAME = "240"                  # 5 минут (доступны: 1,3,5,15,30,60,120,240,360,720,D,M,W)
+TIMEFRAME = "5"                  # 5 минут (доступны: 1,3,5,15,30,60,120,240,360,720,D,M,W)
 MACD_FAST = 12
 MACD_SLOW = 26
 MACD_SIGNAL = 9

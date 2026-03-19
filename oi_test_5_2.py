@@ -8,7 +8,7 @@ TESTNET = False
 CATEGORY = "linear"
 LOOKBACK_MINUTES = 15
 OI_INTERVAL = "5min"                     # 5min,15min,30min,1h,4h,1d
-OI_THRESHOLD = 5.0                       # минимальный рост OI для отправки в Telegram (%)
+OI_THRESHOLD = 3.0                       # минимальный рост OI для отправки в Telegram (%)
 TOP_N = 10
 UPDATE_INTERVAL = 60
 
