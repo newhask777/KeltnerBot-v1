@@ -8,7 +8,7 @@ import requests
 # ------------------ НАСТРОЙКИ ------------------
 TELEGRAM_TOKEN = "8610395627:AAE3xwuPIVhgBeYCj6YzhO3GYEeo2voRp88"
 TELEGRAM_CHAT_ID = "5650732610"
-OI_THRESHOLD = 3.0                              # Порог роста OI в процентах (3%)
+OI_THRESHOLD = 5.0                              # Порог роста OI в процентах (3%)
 TIME_WINDOW = 15 * 60                            # Окно в секундах (15 минут)
 COOLDOWN_SECONDS = 600                            # Задержка между уведомлениями по одной монете (10 мин)
 TOP_SYMBOLS_LIMIT = 100                           # Количество топ-символов по обороту
