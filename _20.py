@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Скринер криптовалют для фьючерсного рынка Bybit.
-Отслеживает монеты, которые выросли на 20% и более за последние 24 часа.
+Отслеживает монеты, которые упали на 20% и более за последние 24 часа.
 Использует библиотеку pybit v5 и WebSocket для получения обновлений в реальном времени.
 После уведомления о монете следующее сообщение по ней отправляется не ранее чем через 1 час.
 Уведомления также отправляются в Telegram.
@@ -13,7 +13,7 @@ import requests
 from pybit.unified_trading import HTTP, WebSocket
 
 # ==================== НАСТРОЙКИ ====================
-THRESHOLD_PERCENT = 20              # Порог роста за 24 часа (%)
+THRESHOLD_PERCENT = -20             # Порог падения за 24 часа (%)
 COOLDOWN_SECONDS = 3600              # Пауза между сообщениями об одной монете (сек)
 TELEGRAM_BOT_TOKEN = "8720117211:AAFtaC3ie0XAyIBMSX3jzvuPrb7GROgsHsQ"   # Токен вашего Telegram бота
 TELEGRAM_CHAT_ID = "5650732610"       # ID чата/пользователя для отправки
@@ -57,17 +57,18 @@ def check_and_notify(symbol: str, change_24h_percent: float):
     с момента последнего уведомления по этому символу.
     """
     now = time.time()
-    if change_24h_percent >= THRESHOLD_PERCENT:
+    # Условие для падения: изменение цены меньше или равно THRESHOLD_PERCENT
+    if change_24h_percent <= THRESHOLD_PERCENT:
         last_time = last_notified_time.get(symbol)
         if last_time is None or (now - last_time) >= COOLDOWN_SECONDS:
-            message = f"🚀 <b>{symbol}</b> вырос на {change_24h_percent:.2f}% за 24 часа!"
+            message = f"📉 <b>{symbol}</b> упал на {abs(change_24h_percent):.2f}% за 24 часа!"
             logger.info(message.replace("<b>", "").replace("</b>", ""))
             send_telegram_message(message)
             last_notified_time[symbol] = now
     else:
-        # Опционально: логируем выход из зоны роста
+        # Опционально: логируем выход из зоны падения
         if symbol in last_notified_time and (now - last_notified_time[symbol]) < COOLDOWN_SECONDS:
-            logger.info(f"📉 {symbol} опустился ниже {THRESHOLD_PERCENT}% (сейчас {change_24h_percent:.2f}%)")
+            logger.info(f"📈 {symbol} поднялся выше {abs(THRESHOLD_PERCENT)}% (сейчас {change_24h_percent:.2f}%)")
 
 def process_ticker_message(message: dict):
     """Обработчик сообщений от WebSocket."""
@@ -105,16 +106,17 @@ def initial_scan(session: HTTP):
             if price24h_pcnt is None:
                 continue
             change_24h_percent = float(price24h_pcnt) * 100
-            if change_24h_percent >= THRESHOLD_PERCENT:
-                logger.info(f"📊 Начальное сканирование: {symbol} вырос на {change_24h_percent:.2f}%")
+            # Условие для падения
+            if change_24h_percent <= THRESHOLD_PERCENT:
+                logger.info(f"📊 Начальное сканирование: {symbol} упал на {abs(change_24h_percent):.2f}%")
                 # Для начального сканирования тоже соблюдаем кулдаун
                 if symbol not in last_notified_time or (now - last_notified_time.get(symbol, 0)) >= COOLDOWN_SECONDS:
                     # Отправляем уведомление в Telegram, если нужно
-                    message = f"📊 <b>{symbol}</b> уже вырос на {change_24h_percent:.2f}% за 24 часа!"
+                    message = f"📊 <b>{symbol}</b> уже упал на {abs(change_24h_percent):.2f}% за 24 часа!"
                     send_telegram_message(message)
                     last_notified_time[symbol] = now
                 found += 1
-        logger.info(f"Начальное сканирование завершено. Найдено монет выше {THRESHOLD_PERCENT}%: {found}")
+        logger.info(f"Начальное сканирование завершено. Найдено монет ниже {abs(THRESHOLD_PERCENT)}%: {found}")
     except Exception as e:
         logger.error(f"Ошибка при начальном сканировании: {e}")
 
@@ -138,12 +140,12 @@ def get_all_linear_symbols(session: HTTP) -> list:
     return symbols
 
 def main():
-    logger.info("Запуск скринера фьючерсных монет Bybit...")
-    logger.info(f"Порог роста: {THRESHOLD_PERCENT}% за 24 часа")
+    logger.info("Запуск скринера фьючерсных монет Bybit (отслеживание падений)...")
+    logger.info(f"Порог падения: {abs(THRESHOLD_PERCENT)}% за 24 часа")
     logger.info(f"Пауза между сообщениями об одной монете: {COOLDOWN_SECONDS // 3600} час(а)")
 
     # Тестовое сообщение в Telegram при запуске
-    send_telegram_message("✅ Скринер Bybit запущен")
+    send_telegram_message("✅ Скринер падений Bybit запущен")
 
     session = HTTP(testnet=False)
 

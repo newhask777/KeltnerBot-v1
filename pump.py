@@ -8,7 +8,7 @@ import logging
 
 # ------------------ НАСТРОЙКИ ------------------
 TELEGRAM_BOT_TOKEN = "8552891773:AAEpqiz89xA7m1dVubNggcKR2PFe1OBLYRw"          # Токен бота Telegram
-TELEGRAM_CHAT_ID = "5650732610"              # ID чата для отправки сообщений
+TELEGRAM_CHAT_ID = "-1003695384744"              # ID чата для отправки сообщений
 PUMP_THRESHOLD = 5.0                            # Порог пампа в процентах (например, 5%)
 TIME_WINDOW = 600                              # Окно в секундах, за которое анализируется изменение
 COOLDOWN_SECONDS = 300                            # Задержка между уведомлениями по одной монете (сек)
