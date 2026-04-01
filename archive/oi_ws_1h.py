@@ -1,5 +1,6 @@
 import asyncio
 import time
+import os
 from collections import deque, defaultdict
 from datetime import date
 import logging
@@ -7,24 +8,31 @@ from pybit.unified_trading import WebSocket, HTTP
 import requests
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8440116086:AAGBD-vGHqYe0E8UbkF6NaeEz7ZirlNG4k8"
+TELEGRAM_TOKEN = "8313253555:AAF6Oo3Bzb93QLPYwUYU8QXNjsOXTEG7-is"
 TELEGRAM_CHAT_ID = "5650732610"
-OI_THRESHOLD = 5.0                              # порог роста OI в процентах
-TIME_WINDOW = 15 * 60                            # 15 минут в секундах
-COOLDOWN_SECONDS = 600                            # задержка между уведомлениями по одной монете
-SYMBOLS_PER_CONNECTION = 150                      # макс. символов на одно WS-соединение
+OI_THRESHOLD = 4                            # порог роста OI в процентах
+TIME_WINDOW = 60 * 60                            # 15 минут в секундах
+COOLDOWN_SECONDS = 600                           # задержка между уведомлениями по одной монете
+SYMBOLS_PER_CONNECTION = 200                     # макс. символов на одно WS-соединение (200 для tickers)
 # -------------------------------------------------
+
+# Добавляем API-ключи Bybit (можно задать через переменные окружения)
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "hCaHjuxzXpZ3NSbdFF")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "k2e2RohzpozHvo5mVXyWXfA1IwmeNmzYCCuZ")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 class OIMonitor:
     """Мониторинг OI для одного набора символов (одно WebSocket-соединение)."""
-    def __init__(self, symbols, tg_token, tg_chat_id, instance_id):
+    def __init__(self, symbols, tg_token, tg_chat_id, instance_id, api_key, api_secret):
         self.symbols = symbols
         self.tg_token = tg_token
         self.tg_chat_id = tg_chat_id
         self.instance_id = instance_id
+        self.api_key = api_key
+        self.api_secret = api_secret
         self.oi_history = {}        # symbol -> deque[(timestamp, oi)]
         self.last_alert = {}         # symbol -> timestamp
         self.reset_date = date.today()          # дата последнего обнуления счётчиков
@@ -131,7 +139,13 @@ class OIMonitor:
             return
 
         logger.info(f"[{self.instance_id}] Подключение к WebSocket для {len(self.symbols)} символов...")
-        self.ws = WebSocket(testnet=False, channel_type="linear")
+        # Создаём WebSocket с аутентификацией, если ключи заданы
+        self.ws = WebSocket(
+            testnet=False,
+            channel_type="linear",
+            api_key=self.api_key if self.api_key else None,
+            api_secret=self.api_secret if self.api_secret else None
+        )
 
         try:
             self.ws.ticker_stream(
@@ -149,9 +163,10 @@ class OIMonitor:
         if self.ws:
             self.ws.exit()
 
-async def fetch_all_symbols():
-    """Получает список всех USDT-бессрочных контрактов."""
-    session = HTTP(testnet=False)
+
+async def fetch_all_symbols(api_key, api_secret):
+    """Получает список всех USDT-бессрочных контрактов с использованием аутентификации (если ключи заданы)."""
+    session = HTTP(testnet=False, api_key=api_key, api_secret=api_secret)
     try:
         resp = session.get_instruments_info(category="linear")
         if resp['retCode'] != 0:
@@ -164,12 +179,14 @@ async def fetch_all_symbols():
         logger.error(f"Ошибка при получении символов: {e}")
         return []
 
+
 def split_list(lst, chunk_size):
     """Разбивает список на части по chunk_size."""
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
+
 async def main():
-    all_symbols = await fetch_all_symbols()
+    all_symbols = await fetch_all_symbols(BYBIT_API_KEY, BYBIT_API_SECRET)
     if not all_symbols:
         logger.error("Нет символов для отслеживания")
         return
@@ -179,7 +196,14 @@ async def main():
 
     monitors = []
     for idx, chunk in enumerate(chunks):
-        monitor = OIMonitor(chunk, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"conn_{idx+1}")
+        monitor = OIMonitor(
+            chunk,
+            TELEGRAM_TOKEN,
+            TELEGRAM_CHAT_ID,
+            f"conn_{idx+1}",
+            BYBIT_API_KEY,
+            BYBIT_API_SECRET
+        )
         monitors.append(monitor)
 
     tasks = [asyncio.create_task(m.run()) for m in monitors]
@@ -190,6 +214,7 @@ async def main():
         logger.info("Остановка по Ctrl+C")
         for m in monitors:
             m.stop()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

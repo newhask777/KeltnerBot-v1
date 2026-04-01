@@ -8,18 +8,18 @@ from pybit.unified_trading import WebSocket, HTTP
 import requests
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8563849596:AAHaigHTcEabgw0f07JSf96_cKoQ77oRpuc"
-TELEGRAM_CHAT_ID = "5650732610"
-OI_THRESHOLD = 5.0            # порог роста OI в процентах
-PRICE_THRESHOLD = 0.5         # порог роста цены в процентах
-VOLUME_THRESHOLD = 5.0        # порог роста оборота (turnover24h) в процентах
+TELEGRAM_TOKEN = "8716582912:AAG7U4IrcbLDhh3cFA9Orvo7Yp9ParN9TgQ"
+TELEGRAM_CHAT_ID = "-1003695384744"
+OI_THRESHOLD = 2.0            # порог роста OI в процентах
+PRICE_THRESHOLD = 0.2        # порог роста цены в процентах
+VOLUME_THRESHOLD = 2.0        # порог роста оборота (turnover24h) в процентах
 TIME_WINDOW = 15 * 60         # 15 минут в секундах
 COOLDOWN_SECONDS = 600        # задержка между уведомлениями по одной монете
 SYMBOLS_PER_CONNECTION = 200  # макс. символов на одно WS-соединение
 # -------------------------------------------------
 
-BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "hCaHjuxzXpZ3NSbdFF")
-BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "k2e2RohzpozHvo5mVXyWXfA1IwmeNmzYCCuZ")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

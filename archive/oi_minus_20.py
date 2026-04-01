@@ -15,7 +15,7 @@ from pybit.unified_trading import HTTP, WebSocket
 # ==================== НАСТРОЙКИ ====================
 THRESHOLD_PERCENT = -20             # Порог падения за 24 часа (%)
 COOLDOWN_SECONDS = 3600              # Пауза между сообщениями об одной монете (сек)
-TELEGRAM_BOT_TOKEN = "8720117211:AAFtaC3ie0XAyIBMSX3jzvuPrb7GROgsHsQ"   # Токен вашего Telegram бота
+TELEGRAM_BOT_TOKEN = "8707276219:AAFRFG1LFUQoYFLUNi0QoJ40KItr4RxMpvg"   # Токен вашего Telegram бота
 TELEGRAM_CHAT_ID = "5650732610"       # ID чата/пользователя для отправки
 # ==================================================
 

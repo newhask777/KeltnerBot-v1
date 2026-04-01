@@ -1,0 +1,6 @@
+pybit
+requests
+pandas
+scikit-learn
+joblib
+aiofiles
