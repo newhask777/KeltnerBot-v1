@@ -8,7 +8,7 @@ from pybit.unified_trading import WebSocket, HTTP
 import requests
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8103804503:AAEODR7TbIORnxBQ04IL5EE4OKoDq3CocnY"
+TELEGRAM_TOKEN = "8563849596:AAHaigHTcEabgw0f07JSf96_cKoQ77oRpuc"
 TELEGRAM_CHAT_ID = "5650732610"
 
 # Пороги изменений OI и цены
@@ -35,8 +35,8 @@ SYMBOLS_PER_CONNECTION = 200
 
 # -------------------------------------------------
 
-BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
-BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "hCaHjuxzXpZ3NSbdFF")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "k2e2RohzpozHvo5mVXyWXfA1IwmeNmzYCCuZ")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
