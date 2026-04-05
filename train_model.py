@@ -56,9 +56,34 @@ def train():
     # Добавляем метки (заглушка)
     df = add_labels(df)
 
+    # OI MONITOR 15m
     # Выбираем признаки для кластеризации
-    feature_cols = ['oi_change_15m', 'oi_change_5m', 'price_change_15m', 'price_change_5m', 'volume', 'volatility']
+    # feature_cols = ['oi_change_15m', 'oi_change_5m', 'price_change_15m', 'price_change_5m', 'volume', 'volatility']
+    # X = df[feature_cols].fillna(0).values
+
+    # OI MONITOR 5m 15 m 60m
+    # В train_model.py замените:
+    feature_cols = [
+        'oi_change_5m', 'oi_change_15m', 'oi_change_1h',
+        'price_change_5m', 'price_change_15m', 'price_change_1h',
+        'volume', 'volatility'
+    ]
     X = df[feature_cols].fillna(0).values
+
+    # Также при добавлении метки (label) используйте, например, price_change_15m > порога
+    # (или более точный метод с заглядыванием вперёд).
+
+    # OI MONITOR 5m 15m 60m + cvd
+    # В train_model.py
+    # feature_cols = [
+    #     'oi_change_5m', 'oi_change_15m', 'oi_change_1h',
+    #     'price_change_5m', 'price_change_15m', 'price_change_1h',
+    #     'volume', 'volatility_price_15m',
+    #     'cvd_change_5m', 'cvd_change_15m', 'cvd_change_1h', 'volatility_cvd_15m'
+    # ]
+    # X = df[feature_cols].fillna(0).values
+
+    # Количество кластеров можно оставить 4 или подобрать заново
 
     # Масштабирование
     scaler = StandardScaler()
