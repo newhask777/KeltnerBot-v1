@@ -14,18 +14,23 @@ import joblib
 import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8475052845:AAEb5aXD6w8l2xSvqbpI6vvfzk4_3X7agHU"
+TELEGRAM_TOKEN = "8774991821:AAG6GWDr6kApRdDGF3YTSrMwgoFtDD8ODU0"
 TELEGRAM_CHAT_ID = "5650732610"
 OI_THRESHOLD = 1.5                             # порог роста OI за 15 мин (%)
 TIME_WINDOW = 60 * 60                           # храним историю за 1 час (3600 сек)
 COOLDOWN_SECONDS = 600                          # задержка между уведомлениями
 SYMBOLS_PER_CONNECTION = 200                    # для tickers
-MAX_SYMBOLS_PER_TRADE_STREAM = 50               # ограничение для trade_stream (по умолчанию 20-50)
+MAX_SYMBOLS_PER_TRADE_STREAM = 50               # ограничение для trade_stream
 DATA_DIR = "data"
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
 GOOD_CLUSTERS_PATH = os.path.join(DATA_DIR, "good_clusters.txt")
+
+# Параметры фильтра "выход из боковика"
+CONSOLIDATION_WINDOW = 3600          # окно для определения боковика (1 час)
+CONSOLIDATION_MAX_RANGE_PERCENT = 2.0  # максимальный диапазон цен в процентах для боковика
+BREAKOUT_LOOKBACK = 300              # смотрим рост цены и CVD за последние 5 минут
 
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
@@ -53,7 +58,7 @@ class OIMonitor:
 
         # Хранилище для CVD (накопленная дельта)
         self.cvd_history = {}     # symbol -> deque[(timestamp, cvd_value)]
-        self.current_cvd = {}     # symbol -> текущее значение CVD (для быстрого доступа)
+        self.current_cvd = {}     # symbol -> текущее значение CVD
 
         # Для ограничения уведомлений
         self.last_alert = {}
@@ -100,11 +105,6 @@ class OIMonitor:
         file_exists = os.path.isfile(SIGNALS_CSV)
         async with aiofiles.open(SIGNALS_CSV, mode='a', newline='', encoding='utf-8') as f:
             if not file_exists:
-                # Заголовки: timestamp, symbol,
-                # oi_change_5m, oi_change_15m, oi_change_1h,
-                # price_change_5m, price_change_15m, price_change_1h,
-                # volume, volatility_price_15m,
-                # cvd_change_5m, cvd_change_15m, cvd_change_1h, volatility_cvd_15m
                 await f.write("timestamp,symbol,"
                               "oi_change_5m,oi_change_15m,oi_change_1h,"
                               "price_change_5m,price_change_15m,price_change_1h,"
@@ -171,61 +171,39 @@ class OIMonitor:
         topic = message.get('topic', '')
         if 'publicTrade' not in topic:
             return
-
-        # Извлекаем символ из топика (формат: "publicTrade.BTCUSDT")
         symbol = topic.split('.')[-1]
         if not symbol or symbol not in self.symbols:
             return
-
         data = message.get('data')
         if not data:
             return
-
-        # Данные могут быть списком или словарём
         trades = data if isinstance(data, list) else [data]
-
         for trade in trades:
-            # Определяем направление: Buy (покупка) или Sell (продажа)
             side = trade.get('S')
             if not side:
                 continue
-
             volume = float(trade.get('v', 0))
             ts = trade.get('T', int(time.time() * 1000)) / 1000.0
-
-            # Инициализируем CVD для символа, если ещё нет
             if symbol not in self.current_cvd:
                 self.current_cvd[symbol] = 0.0
                 self.cvd_history[symbol] = deque()
-
-            # Обновляем CVD: покупка (+volume), продажа (-volume)
             delta = volume if side == 'Buy' else -volume
             self.current_cvd[symbol] += delta
-
-            # Сохраняем в историю
             self._update_history(self.cvd_history, symbol, ts, self.current_cvd[symbol])
 
     # ------------------ Сбор признаков (с CVD) ------------------
     def _collect_features(self, symbol, current_ts, oi_now, price_now):
-        """
-        Возвращает список признаков (все числовые) + timestamp и symbol.
-        Порядок должен совпадать с заголовками CSV.
-        """
-        # 1. Изменения OI
         oi_change_5m = self._get_change(self.oi_history, symbol, current_ts, oi_now, 300)
         oi_change_15m = self._get_change(self.oi_history, symbol, current_ts, oi_now, 900)
         oi_change_1h = self._get_change(self.oi_history, symbol, current_ts, oi_now, 3600)
 
-        # 2. Изменения цены
         price_change_5m = self._get_change(self.price_history, symbol, current_ts, price_now, 300)
         price_change_15m = self._get_change(self.price_history, symbol, current_ts, price_now, 900)
         price_change_1h = self._get_change(self.price_history, symbol, current_ts, price_now, 3600)
 
-        # 3. Объём и волатильность цены
         volume = self._get_latest(self.volume_history, symbol) or 0.0
         volatility_price = self._calc_volatility(self.price_history, symbol, current_ts, 900)
 
-        # 4. CVD (текущее значение)
         cvd_now = self.current_cvd.get(symbol, 0.0)
         cvd_change_5m = self._get_change(self.cvd_history, symbol, current_ts, cvd_now, 300)
         cvd_change_15m = self._get_change(self.cvd_history, symbol, current_ts, cvd_now, 900)
@@ -243,14 +221,9 @@ class OIMonitor:
 
     # ------------------ Проверка кластера (ML) ------------------
     def _is_good_pattern(self, features):
-        """
-        features – полный список из 14 элементов (timestamp, symbol, и 12 числовых).
-        Проверяет, принадлежит ли сигнал хорошему кластеру.
-        """
         if self.scaler is None or self.kmeans is None or self.good_clusters is None:
             return True
         try:
-            # Числовые признаки начинаются с индекса 2 (после timestamp, symbol)
             X = np.array(features[2:14]).reshape(1, -1)
             X_scaled = self.scaler.transform(X)
             cluster = self.kmeans.predict(X_scaled)[0]
@@ -258,6 +231,48 @@ class OIMonitor:
         except Exception as e:
             logger.error(f"Ошибка проверки кластера: {e}")
             return True
+
+    # ------------------ НОВЫЙ ФИЛЬТР: выход из боковика ------------------
+    def _is_consolidation_breakout(self, symbol, current_ts, current_price):
+        """
+        Проверяет, был ли боковик (консолидация) в течение CONSOLIDATION_WINDOW,
+        и произошёл ли выход из него с ростом цены и CVD за последние BREAKOUT_LOOKBACK секунд.
+        Возвращает True, если условия выполнены.
+        """
+        # 1. Проверка боковика: цены за последние CONSOLIDATION_WINDOW секунд
+        hist_prices = self.price_history.get(symbol)
+        if not hist_prices:
+            return False
+        cutoff = current_ts - CONSOLIDATION_WINDOW
+        prices_in_window = [price for ts, price in hist_prices if ts >= cutoff]
+        if len(prices_in_window) < 5:
+            return False   # недостаточно данных
+
+        max_price = max(prices_in_window)
+        min_price = min(prices_in_window)
+        if current_price == 0:
+            return False
+        price_range_percent = (max_price - min_price) / current_price * 100.0
+
+        if price_range_percent > CONSOLIDATION_MAX_RANGE_PERCENT:
+            logger.debug(f"[{self.instance_id}] {symbol}: не боковик, диапазон {price_range_percent:.2f}%")
+            return False
+
+        # 2. Рост цены за последние BREAKOUT_LOOKBACK секунд
+        price_ago = self._get_value_at(self.price_history, symbol, current_ts - BREAKOUT_LOOKBACK)
+        if price_ago is None or current_price <= price_ago:
+            logger.debug(f"[{self.instance_id}] {symbol}: цена не растет (текущая {current_price}, было {price_ago})")
+            return False
+
+        # 3. Рост CVD за последние BREAKOUT_LOOKBACK секунд
+        cvd_now = self.current_cvd.get(symbol, 0.0)
+        cvd_ago = self._get_value_at(self.cvd_history, symbol, current_ts - BREAKOUT_LOOKBACK)
+        if cvd_ago is None or cvd_now <= cvd_ago:
+            logger.debug(f"[{self.instance_id}] {symbol}: CVD не растет (текущий {cvd_now}, было {cvd_ago})")
+            return False
+
+        logger.info(f"[{self.instance_id}] {symbol}: боковик пробит вверх с ростом CVD! (диапазон {price_range_percent:.2f}%)")
+        return True
 
     # ------------------ Обработка ticker (основной цикл) ------------------
     async def process_ticker(self, message):
@@ -311,9 +326,14 @@ class OIMonitor:
         if len(self.feature_buffer) >= self.buffer_size:
             await self._save_features_to_csv()
 
-        # Фильтрация по модели
+        # Фильтрация по модели ML (если загружена)
         if not self._is_good_pattern(features):
             logger.debug(f"[{self.instance_id}] Сигнал {symbol} отфильтрован моделью")
+            return
+
+        # НОВЫЙ ФИЛЬТР: выход из боковика с ростом цены и CVD
+        if not self._is_consolidation_breakout(symbol, ts, price):
+            logger.debug(f"[{self.instance_id}] Сигнал {symbol} отклонён: не выход из боковика")
             return
 
         # Отправка уведомления
@@ -325,14 +345,14 @@ class OIMonitor:
         signal_number = self.daily_counts[symbol]
         self.last_alert[symbol] = ts
 
-        msg = (f"🚀 <b>РОСТ OI</b>\n"
+        msg = (f"🚀 <b>РОСТ OI + ПРОБОЙ БОКОВИКА</b>\n"
                f"Монета: {symbol}\n"
                f"Текущий OI: {oi_value:.2f}\n"
                f"15 мин назад: {old_oi:.2f}\n"
-               f"Рост: <b>{change_percent:.2f}%</b>\n"
+               f"Рост OI: <b>{change_percent:.2f}%</b>\n"
                f"Сигнал #{signal_number} за сегодня\n"
                f"Время: {time.strftime('%H:%M:%S')}")
-        logger.info(f"[{self.instance_id}] Сигнал {symbol}: {change_percent:.2f}% (#{signal_number})")
+        logger.info(f"[{self.instance_id}] СИГНАЛ {symbol}: рост OI {change_percent:.2f}% + пробой боковика (#{signal_number})")
         await self.send_telegram(msg)
 
     # ------------------ Callbacks для WebSocket ------------------
@@ -368,17 +388,14 @@ class OIMonitor:
             return
 
         # WebSocket для trade_stream (CVD)
-        # Разбиваем символы на части, чтобы не превысить лимит
         trade_chunks = [self.symbols[i:i + MAX_SYMBOLS_PER_TRADE_STREAM]
                         for i in range(0, len(self.symbols), MAX_SYMBOLS_PER_TRADE_STREAM)]
-
         self.ws_trade = WebSocket(
             testnet=False,
             channel_type="linear",
             api_key=self.api_key if self.api_key else None,
             api_secret=self.api_secret if self.api_secret else None
         )
-
         for chunk in trade_chunks:
             try:
                 self.ws_trade.trade_stream(symbol=chunk, callback=self.handle_trade)
@@ -422,7 +439,6 @@ async def main():
         logger.error("Нет символов для отслеживания")
         return
 
-    # Для tickers используем крупные чанки, для trade внутри каждого монитора разобьём отдельно
     chunks = split_list(all_symbols, SYMBOLS_PER_CONNECTION)
     logger.info(f"Создано {len(chunks)} экземпляров OIMonitor (по {SYMBOLS_PER_CONNECTION} символов для tickers)")
 
