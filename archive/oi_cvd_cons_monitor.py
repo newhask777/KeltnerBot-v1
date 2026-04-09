@@ -18,19 +18,19 @@ import numpy as np
 # ------------------ НАСТРОЙКИ ------------------
 TELEGRAM_TOKEN = "8475052845:AAEb5aXD6w8l2xSvqbpI6vvfzk4_3X7agHU"
 TELEGRAM_CHAT_ID = "5650732610"
-OI_THRESHOLD = 0.1 #1.5
+OI_THRESHOLD = 3.0
 TIME_WINDOW = 60 * 60
 COOLDOWN_SECONDS = 600
 MAX_SYMBOLS_PER_SUBSCRIPTION = 50  # Ограничение Bybit: не более 50 символов на одну подписку
 
-DATA_DIR = "data"
+DATA_DIR = "data2"
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
 GOOD_CLUSTERS_PATH = os.path.join(DATA_DIR, "good_clusters.txt")
 
 CONSOLIDATION_WINDOW = 3600
-CONSOLIDATION_MAX_RANGE_PERCENT = 10.0
+CONSOLIDATION_MAX_RANGE_PERCENT = 1.0
 BREAKOUT_LOOKBACK = 60
 
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
