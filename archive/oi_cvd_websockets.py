@@ -9,7 +9,7 @@ import requests
 import websockets
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8103804503:AAEODR7TbIORnxBQ04IL5EE4OKoDq3CocnY"
+TELEGRAM_TOKEN = "8508624106:AAHOKQ2vdVAQIwrwlOHWgN81t2PpYm_rJt8"
 TELEGRAM_CHAT_ID = "5650732610"
 
 # Пороги изменений OI и цены
