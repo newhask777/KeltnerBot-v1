@@ -8,7 +8,7 @@ from pybit.unified_trading import WebSocket, HTTP
 import requests
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8563849596:AAHaigHTcEabgw0f07JSf96_cKoQ77oRpuc"
+TELEGRAM_TOKEN = "8595657443:AAG3c_Cjo2fK2_HVows-4ljkAeQigg20n14"
 TELEGRAM_CHAT_ID = "5650732610"
 
 # Пороги изменений OI и цены

@@ -19,14 +19,16 @@ from websockets.exceptions import ConnectionClosed
 # ------------------ НАСТРОЙКИ ------------------
 TELEGRAM_TOKEN = "8475052845:AAEb5aXD6w8l2xSvqbpI6vvfzk4_3X7agHU"
 TELEGRAM_CHAT_ID = "5650732610"
-OI_THRESHOLD = 3.0                            # порог роста OI за 15 мин (%)
-TIME_WINDOW = 2 * 60 * 60                     # храним историю за 2 часа (увеличено)
+OI_THRESHOLD = 2.0                            # порог роста OI за 15 мин (%)
+TIME_WINDOW = 2 * 60 * 60                     # храним историю за 2 часа
 COOLDOWN_SECONDS = 600                        # задержка между уведомлениями
 SYMBOLS_PER_CONNECTION = 200                  # для tickers
 MAX_SYMBOLS_PER_TRADE_STREAM = 50             # ограничение для trade_stream
 
 DATA_DIR = "data"
+ALL_PRICES_CSV = os.path.join(DATA_DIR, "all_prices.csv")
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
+SIGNAL_PRICES_CSV = os.path.join(DATA_DIR, "signal_prices.csv")  # новый файл для цен сигналов
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
 GOOD_CLUSTERS_PATH = os.path.join(DATA_DIR, "good_clusters.txt")
@@ -35,7 +37,7 @@ GOOD_CLUSTERS_PATH = os.path.join(DATA_DIR, "good_clusters.txt")
 CONSOLIDATION_WINDOW = 3600        # окно для определения боковика (1 час)
 CONSOLIDATION_MAX_RANGE_PERCENT = 1.0  # максимальный диапазон цен в процентах для боковика
 BREAKOUT_LOOKBACK = 300              # смотрим рост цены и CVD за последние 5 минут
-ENABLE_BREAKOUT_FILTER = False       # ВРЕМЕННО ОТКЛЮЧАЕМ ФИЛЬТР (для отладки)
+ENABLE_BREAKOUT_FILTER = False        # фильтр боковика включён
 
 BYBIT_API_KEY = "rAo3NMaaOznIzx2Ijl"
 BYBIT_API_SECRET = "eBXn0Y6AGZv6HtddBB3OmWKxi3eFw65nE1y6"
@@ -75,8 +77,8 @@ class OIMonitorWebsocket:
 
         # Буфер для записи признаков в CSV
         self.feature_buffer = []
-        self.buffer_size = 50
-        self.csv_lock = asyncio.Lock()          # Блокировка для безопасной записи CSV
+        self.buffer_size = 10                     # уменьшен для более частой записи
+        self.csv_lock = asyncio.Lock()
 
         # Модель ML
         self.scaler = None
@@ -134,6 +136,12 @@ class OIMonitorWebsocket:
                     output.seek(0)
                     output.truncate()
             self.feature_buffer.clear()
+
+    async def flush_buffer(self):
+        """Принудительная запись остатков буфера (вызывается при остановке)"""
+        if self.feature_buffer:
+            await self._save_features_to_csv()
+            logger.info(f"[{self.instance_id}] Буфер признаков сохранён (записей: {len(self.feature_buffer)})")
 
     # ------------------ Telegram ------------------
     async def send_telegram(self, text: str):
@@ -267,7 +275,7 @@ class OIMonitorWebsocket:
     # ------------------ Фильтр: выход из боковика ------------------
     def _is_consolidation_breakout(self, symbol: str, current_ts: float, current_price: float) -> bool:
         if not ENABLE_BREAKOUT_FILTER:
-            return True  # временно отключено
+            return True
 
         hist_prices = self.price_history.get(symbol)
         if not hist_prices:
@@ -318,6 +326,10 @@ class OIMonitorWebsocket:
             ts = message.get('ts', int(time.time() * 1000)) / 1000.0
         except (ValueError, TypeError):
             return
+        
+        # Сохраняем все цены для последующей разметки меток
+        async with aiofiles.open(ALL_PRICES_CSV, mode='a', encoding='utf-8') as pf:
+            await pf.write(f"{ts},{symbol},{price}\n")
 
         # Обновляем истории
         self._update_history(self.oi_history, symbol, ts, oi_value)
@@ -346,7 +358,7 @@ class OIMonitorWebsocket:
         if not features:
             return
 
-        # Сохраняем в CSV
+        # Сохраняем в CSV признаки
         self.feature_buffer.append(features)
         if len(self.feature_buffer) >= self.buffer_size:
             await self._save_features_to_csv()
@@ -355,9 +367,13 @@ class OIMonitorWebsocket:
         if not self._is_good_pattern(features):
             return
 
-        # Фильтр выхода из боковика (отключаемый)
+        # Фильтр выхода из боковика
         if not self._is_consolidation_breakout(symbol, ts, price):
             return
+
+        # --- СОХРАНЯЕМ ЦЕНУ СИГНАЛА ДЛЯ БУДУЩЕЙ РАЗМЕТКИ ---
+        async with aiofiles.open(SIGNAL_PRICES_CSV, mode='a', encoding='utf-8') as pf:
+            await pf.write(f"{ts},{symbol},{price}\n")
 
         # Отправка уведомления
         current_date = date.today()
@@ -380,23 +396,19 @@ class OIMonitorWebsocket:
 
     # ------------------ WebSocket управление ------------------
     async def _subscribe_and_listen(self, url: str, subscriptions: List[str], handler, reconnect_delay: int = 5):
-        """Подключается к WebSocket, подписывается на каналы и слушает сообщения."""
         while self._running:
             try:
                 async with websockets.connect(url, ping_interval=20, ping_timeout=30) as ws:
-                    # Подписка
                     subscribe_msg = {"op": "subscribe", "args": subscriptions}
                     await ws.send(json.dumps(subscribe_msg))
                     logger.info(f"[{self.instance_id}] Подписался на {len(subscriptions)} каналов: {subscriptions[:3]}...")
-
-                    # Чтение сообщений
                     async for raw_msg in ws:
                         if not self._running:
                             break
                         try:
                             msg = json.loads(raw_msg)
                             if 'op' in msg and msg['op'] == 'subscribe':
-                                continue  # подтверждение подписки
+                                continue
                             await handler(msg)
                         except Exception as e:
                             logger.error(f"[{self.instance_id}] Ошибка обработки сообщения: {e}")
@@ -408,18 +420,15 @@ class OIMonitorWebsocket:
                 await asyncio.sleep(reconnect_delay)
 
     async def _run_ticker_stream(self):
-        """Запускает один WebSocket для tickers всех символов."""
         subscriptions = [f"tickers.{sym}" for sym in self.symbols]
         await self._subscribe_and_listen(WS_PUBLIC_URL, subscriptions, self.process_ticker)
 
     async def _run_trade_stream(self, symbol_chunk: List[str]):
-        """Запускает один WebSocket для publicTrade заданного набора символов."""
         subscriptions = [f"publicTrade.{sym}" for sym in symbol_chunk]
         await self._subscribe_and_listen(WS_PUBLIC_URL, subscriptions, self.process_trade)
 
     # ------------------ Контроль таймаутов ------------------
     async def _watchdog(self):
-        """Проверяет, приходят ли данные. Если нет - поднимает исключение для перезапуска."""
         while self._running:
             await asyncio.sleep(30)
             now = time.time()
@@ -433,27 +442,26 @@ class OIMonitorWebsocket:
         logger.info(f"[{self.instance_id}] Монитор запущен (websockets)")
         self._running = True
 
-        # Разбиваем символы для trade на чанки
         trade_chunks = [self.symbols[i:i + MAX_SYMBOLS_PER_TRADE_STREAM]
                         for i in range(0, len(self.symbols), MAX_SYMBOLS_PER_TRADE_STREAM)]
 
-        # Запускаем задачи
         self.ticker_task = asyncio.create_task(self._run_ticker_stream())
         self.trade_tasks = [asyncio.create_task(self._run_trade_stream(chunk)) for chunk in trade_chunks]
         watchdog_task = asyncio.create_task(self._watchdog())
 
-        # Ожидаем завершения любой задачи (ошибка или остановка)
         tasks = [self.ticker_task] + self.trade_tasks + [watchdog_task]
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-
-        # Если какая-то задача завершилась с ошибкой, отменяем остальные и поднимаем исключение
-        for task in done:
-            if task.exception() is not None:
-                exc = task.exception()
-                logger.error(f"[{self.instance_id}] Задача завершилась с ошибкой: {exc}")
-                for p in pending:
-                    p.cancel()
-                raise exc
+        try:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                if task.exception() is not None:
+                    exc = task.exception()
+                    logger.error(f"[{self.instance_id}] Задача завершилась с ошибкой: {exc}")
+                    for p in pending:
+                        p.cancel()
+                    raise exc
+        finally:
+            # Принудительно сохраняем остатки буфера при любом завершении
+            await self.flush_buffer()
 
     def stop(self):
         self._running = False
@@ -461,11 +469,12 @@ class OIMonitorWebsocket:
             self.ticker_task.cancel()
         for t in self.trade_tasks:
             t.cancel()
+        # Создаём задачу на запись буфера (без ожидания, чтобы не блокировать)
+        asyncio.create_task(self.flush_buffer())
 
 
 # ------------------ Вспомогательные функции ------------------
 async def fetch_all_symbols(api_key, api_secret, min_volume_24h=1000):
-    """Получает список USDT-бессрочных с фильтром по объёму (исключает мёртвые монеты)."""
     from pybit.unified_trading import HTTP
     session = HTTP(testnet=False, api_key=api_key, api_secret=api_secret)
     try:
@@ -473,7 +482,6 @@ async def fetch_all_symbols(api_key, api_secret, min_volume_24h=1000):
         if resp['retCode'] != 0:
             logger.error(f"Ошибка получения инструментов: {resp}")
             return []
-        # Дополнительно получаем tickers для фильтрации по объёму
         tickers_resp = session.get_tickers(category="linear")
         volume_map = {}
         if tickers_resp['retCode'] == 0:
@@ -483,7 +491,6 @@ async def fetch_all_symbols(api_key, api_secret, min_volume_24h=1000):
                     volume_map[item['symbol']] = vol
                 except:
                     pass
-
         symbols = []
         for item in resp['result']['list']:
             if item['quoteCoin'] == 'USDT':
@@ -501,34 +508,40 @@ def split_list(lst, chunk_size):
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
 async def main():
-    while True:
-        try:
-            # Фильтруем символы с объёмом > 1000 USDT за 24ч (исключаем неликвид)
-            all_symbols = await fetch_all_symbols(BYBIT_API_KEY, BYBIT_API_SECRET, min_volume_24h=1000)
-            if not all_symbols:
-                logger.error("Нет символов для отслеживания, повтор через 60 сек")
-                await asyncio.sleep(60)
-                continue
+    # Обработка Ctrl+C для корректного завершения всех мониторов
+    try:
+        while True:
+            try:
+                all_symbols = await fetch_all_symbols(BYBIT_API_KEY, BYBIT_API_SECRET, min_volume_24h=1000)
+                if not all_symbols:
+                    logger.error("Нет символов для отслеживания, повтор через 60 сек")
+                    await asyncio.sleep(60)
+                    continue
 
-            chunks = split_list(all_symbols, SYMBOLS_PER_CONNECTION)
-            logger.info(f"Создано {len(chunks)} экземпляров OIMonitorWebsocket (по {SYMBOLS_PER_CONNECTION} символов для tickers)")
+                chunks = split_list(all_symbols, SYMBOLS_PER_CONNECTION)
+                logger.info(f"Создано {len(chunks)} экземпляров OIMonitorWebsocket (по {SYMBOLS_PER_CONNECTION} символов для tickers)")
 
-            monitors = []
-            for idx, chunk in enumerate(chunks):
-                monitor = OIMonitorWebsocket(
-                    chunk, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"conn_{idx+1}",
-                    BYBIT_API_KEY, BYBIT_API_SECRET
-                )
-                monitors.append(monitor)
+                monitors = []
+                for idx, chunk in enumerate(chunks):
+                    monitor = OIMonitorWebsocket(
+                        chunk, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, f"conn_{idx+1}",
+                        BYBIT_API_KEY, BYBIT_API_SECRET
+                    )
+                    monitors.append(monitor)
 
-            tasks = [asyncio.create_task(m.run()) for m in monitors]
-            await asyncio.gather(*tasks)
-        except asyncio.CancelledError:
-            logger.info("Остановка по Ctrl+C, выхожу...")
-            break
-        except Exception as e:
-            logger.error(f"Критическая ошибка в main: {e}. Перезапуск через 30 секунд...")
-            await asyncio.sleep(30)
+                tasks = [asyncio.create_task(m.run()) for m in monitors]
+                await asyncio.gather(*tasks)
+            except asyncio.CancelledError:
+                logger.info("Остановка по Ctrl+C, выхожу...")
+                break
+            except Exception as e:
+                logger.error(f"Критическая ошибка в main: {e}. Перезапуск через 30 секунд...")
+                await asyncio.sleep(30)
+    finally:
+        # Завершаем все мониторы (если есть)
+        for m in monitors:
+            m.stop()
+        logger.info("Все мониторы остановлены, буферы сохранены.")
 
 if __name__ == "__main__":
     if os.name == 'nt':
