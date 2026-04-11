@@ -14,13 +14,15 @@ import joblib
 import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8475052845:AAEb5aXD6w8l2xSvqbpI6vvfzk4_3X7agHU"
+TELEGRAM_TOKEN = "8103804503:AAEODR7TbIORnxBQ04IL5EE4OKoDq3CocnY"
 TELEGRAM_CHAT_ID = "5650732610"
-OI_THRESHOLD = 1.5                             # порог роста OI за 15 мин (%)
+
+OI_THRESHOLD = 5                            # порог роста OI за 15 мин (%)
 TIME_WINDOW = 60 * 60                           # храним историю за 1 час (3600 сек)
 COOLDOWN_SECONDS = 600                          # задержка между уведомлениями
 SYMBOLS_PER_CONNECTION = 200                    # для tickers
-MAX_SYMBOLS_PER_TRADE_STREAM = 50               # ограничение для trade_stream (по умолчанию 20-50)
+MAX_SYMBOLS_PER_TRADE_STREAM = 50   # ограничение для trade_stream (по умолчанию 20-50)
+
 DATA_DIR = "data"
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
