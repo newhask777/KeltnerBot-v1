@@ -14,7 +14,7 @@ import joblib
 import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8675414561:AAFjtb9iPKelQoyO_pEvJjIYmI9G7628bWo"
+TELEGRAM_TOKEN = "8694523374:AAGkVcXkJ3ubGLwxo_AHnOlK-FfFasNG7Uw"
 TELEGRAM_CHAT_ID = "7776458723"
 
 OI_THRESHOLD = 5                            # порог роста OI за 15 мин (%)
@@ -23,7 +23,7 @@ COOLDOWN_SECONDS = 600                      # задержка между уве
 SYMBOLS_PER_CONNECTION = 200                # для tickers
 MAX_SYMBOLS_PER_TRADE_STREAM = 50           # ограничение для trade_stream
 
-DATA_DIR = "data"
+DATA_DIR = "data2"
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
@@ -34,6 +34,10 @@ BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 
 # Флаг: использовать ли ML-фильтрацию после проверки OI+CVD
 USE_ML_FILTER = True   # если False, ML не применяется
+
+# Фильтры низкой ликвидности
+MIN_24H_VOLUME = 100_000        # минимальный объём торгов за 24ч в USDT (1 млн)
+MIN_OPEN_INTEREST = 50_000       # минимальный OI в USDT (500 тыс)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -256,6 +260,12 @@ class OIMonitor:
             volume = float(data.get('volume24h', 0))
             ts = message.get('ts', int(time.time() * 1000)) / 1000.0
         except (ValueError, TypeError):
+            return
+
+        # ---- ФИЛЬТРЫ НИЗКОЙ ЛИКВИДНОСТИ ----
+        if volume < MIN_24H_VOLUME:
+            return
+        if oi_value < MIN_OPEN_INTEREST:
             return
 
         # Обновляем истории OI, цены, объёма

@@ -14,7 +14,7 @@ import joblib
 import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8675414561:AAFjtb9iPKelQoyO_pEvJjIYmI9G7628bWo"
+TELEGRAM_TOKEN = "8779412110:AAHhMjJvo_hnAcmWO8eCsO5qZuMN4gAD18g"
 TELEGRAM_CHAT_ID = "7776458723"
 
 OI_THRESHOLD = 5                            # порог роста OI за 15 мин (%)
@@ -23,7 +23,7 @@ COOLDOWN_SECONDS = 600                      # задержка между уве
 SYMBOLS_PER_CONNECTION = 200                # для tickers
 MAX_SYMBOLS_PER_TRADE_STREAM = 50           # ограничение для trade_stream
 
-DATA_DIR = "data"
+DATA_DIR = "data3"
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
@@ -34,6 +34,14 @@ BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 
 # Флаг: использовать ли ML-фильтрацию после проверки OI+CVD
 USE_ML_FILTER = True   # если False, ML не применяется
+
+# Фильтры низкой ликвидности
+MIN_24H_VOLUME = 10_000        # минимальный объём торгов за 24ч в USDT (1 млн)
+MIN_OPEN_INTEREST = 5_000       # минимальный OI в USDT (500 тыс)
+
+# Фильтр боковика (консолидации)
+CONSOLIDATION_WINDOW = 7200       # 30 минут в секундах
+CONSOLIDATION_THRESHOLD = 1.0     # максимальное отклонение цены в процентах
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -169,6 +177,26 @@ class OIMonitor:
             return 0.0
         return (current_val - old_val) / old_val * 100.0
 
+    # ------------------ Проверка консолидации цены ------------------
+    def _is_consolidation(self, symbol, current_ts, price_now, window_sec, max_range_pct):
+        """
+        Проверяет, была ли цена в диапазоне max_range_pct% за последние window_sec секунд.
+        """
+        if symbol not in self.price_history:
+            return False
+        hist = self.price_history[symbol]
+        cutoff = current_ts - window_sec
+        prices = [val for ts, val in hist if ts >= cutoff]
+        if len(prices) < 2:
+            return False
+        min_price = min(prices)
+        max_price = max(prices)
+        # Избегаем деления на ноль
+        if min_price == 0:
+            return False
+        range_pct = (max_price - min_price) / min_price * 100.0
+        return range_pct <= max_range_pct
+
     # ------------------ Обработка сделок (CVD) ------------------
     async def process_trade(self, message):
         topic = message.get('topic', '')
@@ -258,6 +286,12 @@ class OIMonitor:
         except (ValueError, TypeError):
             return
 
+        # ---- ФИЛЬТРЫ НИЗКОЙ ЛИКВИДНОСТИ ----
+        if volume < MIN_24H_VOLUME:
+            return
+        if oi_value < MIN_OPEN_INTEREST:
+            return
+
         # Обновляем истории OI, цены, объёма
         self._update_history(self.oi_history, symbol, ts, oi_value)
         self._update_history(self.price_history, symbol, ts, price)
@@ -279,16 +313,19 @@ class OIMonitor:
         cvd_now = self.current_cvd.get(symbol, 0.0)
         old_cvd = self._get_value_at(self.cvd_history, symbol, target_ts)
         if old_cvd is None:
-            # Если истории CVD нет (например, не было сделок), сигнал не отправляем
             return
-        # Избегаем деления на ноль
         if old_cvd == 0:
             cvd_change = 100.0 if cvd_now > 0 else 0.0
         else:
             cvd_change = (cvd_now - old_cvd) / abs(old_cvd) * 100.0
 
         if cvd_change <= 0:
-            return   # CVD не вырос или остался нулевым
+            return
+
+        # --- Проверка консолидации цены перед сигналом ---
+        if not self._is_consolidation(symbol, ts, price, CONSOLIDATION_WINDOW, CONSOLIDATION_THRESHOLD):
+            logger.debug(f"[{self.instance_id}] {symbol} отклонён: нет боковика")
+            return
 
         # Cooldown
         last_alert_ts = self.last_alert.get(symbol, 0)
@@ -319,7 +356,7 @@ class OIMonitor:
         signal_number = self.daily_counts[symbol]
         self.last_alert[symbol] = ts
 
-        msg = (f"🚀 <b>РОСТ OI И CVD</b>\n"
+        msg = (f"🚀 <b>РОСТ OI И CVD (боковик)</b>\n"
                f"Монета: {symbol}\n"
                f"OI вырос: {oi_change:.2f}%\n"
                f"CVD вырос: {cvd_change:.2f}%\n"

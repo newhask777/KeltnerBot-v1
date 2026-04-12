@@ -6,7 +6,7 @@ import logging
 import aiofiles
 from collections import deque, defaultdict
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import requests
 from pybit.unified_trading import WebSocket, HTTP
@@ -14,7 +14,7 @@ import joblib
 import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8675414561:AAFjtb9iPKelQoyO_pEvJjIYmI9G7628bWo"
+TELEGRAM_TOKEN = "8694523374:AAGkVcXkJ3ubGLwxo_AHnOlK-FfFasNG7Uw"
 TELEGRAM_CHAT_ID = "7776458723"
 
 OI_THRESHOLD = 5                            # порог роста OI за 15 мин (%)
@@ -23,7 +23,7 @@ COOLDOWN_SECONDS = 600                      # задержка между уве
 SYMBOLS_PER_CONNECTION = 200                # для tickers
 MAX_SYMBOLS_PER_TRADE_STREAM = 50           # ограничение для trade_stream
 
-DATA_DIR = "data"
+DATA_DIR = "data5"
 SIGNALS_CSV = os.path.join(DATA_DIR, "signals.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
@@ -34,6 +34,22 @@ BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 
 # Флаг: использовать ли ML-фильтрацию после проверки OI+CVD
 USE_ML_FILTER = True   # если False, ML не применяется
+
+# Фильтры низкой ликвидности
+MIN_24H_VOLUME = 10_000        # минимальный объём торгов за 24ч в USDT (1 млн)
+MIN_OPEN_INTEREST = 5_000       # минимальный OI в USDT (500 тыс)
+
+# Фильтр боковика (консолидации)
+CONSOLIDATION_WINDOW = 1800       # 30 минут в секундах
+CONSOLIDATION_THRESHOLD = 1.0     # максимальное отклонение цены в процентах
+
+# ------------------ ТОРГОВЫЕ НАСТРОЙКИ ------------------
+TRADING_ENABLED = True                    # включить автоматическую торговлю
+RISK_PERCENT = 2.0                        # процент от свободного баланса на сделку (2%)
+TAKE_PROFIT_PERCENT = 10.0                # тейк-профит в % от цены входа
+STOP_LOSS_PERCENT = 20.0                  # стоп-лосс в % от цены входа
+USE_LEVERAGE = True                       # использовать плечо (только для фьючерсов)
+LEVERAGE = 10                             # плечо, если USE_LEVERAGE = True
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -50,7 +66,17 @@ class OIMonitor:
         self.instance_id = instance_id
         self.api_key = api_key
         self.api_secret = api_secret
-        self.use_ml_filter = USE_ML_FILTER   # флаг из настроек
+        self.use_ml_filter = USE_ML_FILTER
+
+        # HTTP сессия для торговли
+        self.session = HTTP(testnet=False, api_key=api_key, api_secret=api_secret)
+
+        # Хранилище информации об инструментах (минимальный размер ордера и т.д.)
+        self.instruments_info: Dict[str, Dict[str, Any]] = {}
+        # Флаг: есть ли открытая позиция (глобально для всех символов)
+        self.has_open_position = False
+        # Информация об открытой позиции (символ, количество и т.д.)
+        self.open_position_info: Optional[Dict[str, Any]] = None
 
         # Хранилища для OI, цены, объёма
         self.oi_history = {}
@@ -81,8 +107,242 @@ class OIMonitor:
         self.ws_ticker = None
         self.ws_trade = None
 
-    # ------------------ Загрузка модели ------------------
+        # Загружаем информацию об инструментах для всех символов
+        self._load_instruments_info()
+
+    # ------------------ Загрузка информации об инструментах ------------------
+    def _load_instruments_info(self):
+        """Загружает информацию о минимальном размере ордера для каждого символа."""
+        logger.info(f"[{self.instance_id}] Загрузка информации об инструментах для {len(self.symbols)} символов...")
+        
+        for symbol in self.symbols:
+            try:
+                resp = self.session.get_instruments_info(category="linear", symbol=symbol)
+                if resp['retCode'] == 0 and resp['result']['list']:
+                    instrument = resp['result']['list'][0]
+                    lot_size_filter = instrument.get('lotSizeFilter', {})
+                    
+                    # Извлекаем минимальный размер ордера и шаг количества
+                    min_order_qty = float(lot_size_filter.get('minOrderQty', 0))
+                    qty_step = float(lot_size_filter.get('qtyStep', 0))
+                    
+                    self.instruments_info[symbol] = {
+                        'minOrderQty': min_order_qty,
+                        'qtyStep': qty_step,
+                        'minNotionalValue': float(lot_size_filter.get('minNotionalValue', 0))
+                    }
+                    
+                    logger.debug(f"[{self.instance_id}] {symbol}: minQty={min_order_qty}, qtyStep={qty_step}")
+                else:
+                    logger.warning(f"[{self.instance_id}] Не удалось получить информацию для {symbol}: {resp}")
+                    # Устанавливаем значения по умолчанию
+                    self.instruments_info[symbol] = {
+                        'minOrderQty': 0.001,
+                        'qtyStep': 0.001,
+                        'minNotionalValue': 5.0
+                    }
+            except Exception as e:
+                logger.error(f"[{self.instance_id}] Ошибка при загрузке информации для {symbol}: {e}")
+                self.instruments_info[symbol] = {
+                    'minOrderQty': 0.001,
+                    'qtyStep': 0.001,
+                    'minNotionalValue': 5.0
+                }
+        
+        logger.info(f"[{self.instance_id}] Загрузка информации об инструментах завершена")
+
+    # ------------------ Проверка открытых позиций ------------------
+    async def _check_open_positions(self) -> bool:
+        """
+        Проверяет, есть ли открытые позиции.
+        Возвращает True, если есть хотя бы одна открытая позиция.
+        """
+        try:
+            resp = self.session.get_positions(category="linear", settleCoin="USDT")
+            if resp['retCode'] == 0:
+                positions = resp['result']['list']
+                # Фильтруем позиции с размером > 0
+                open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+                
+                if open_positions:
+                    self.has_open_position = True
+                    # Сохраняем информацию о первой открытой позиции
+                    self.open_position_info = open_positions[0]
+                    logger.info(f"[{self.instance_id}] Открыта позиция: {self.open_position_info.get('symbol')}, "
+                              f"размер: {self.open_position_info.get('size')}")
+                    return True
+                else:
+                    self.has_open_position = False
+                    self.open_position_info = None
+                    return False
+            else:
+                logger.error(f"[{self.instance_id}] Ошибка получения позиций: {resp}")
+                return self.has_open_position  # Возвращаем предыдущее значение в случае ошибки
+        except Exception as e:
+            logger.error(f"[{self.instance_id}] Исключение при проверке позиций: {e}")
+            return self.has_open_position
+
+    # ------------------ Расчёт количества для ордера ------------------
+    async def _calculate_order_qty(self, symbol: str, current_price: float) -> Optional[float]:
+        """
+        Рассчитывает количество для ордера с учётом минимального размера и шага.
+        Возвращает количество или None, если рассчитать не удалось.
+        """
+        try:
+            # Получаем информацию об инструменте
+            instrument_info = self.instruments_info.get(symbol)
+            if not instrument_info:
+                logger.error(f"[{self.instance_id}] Нет информации об инструменте для {symbol}")
+                return None
+            
+            # Получаем баланс
+            wallet_balance = await self._get_wallet_balance()
+            if wallet_balance is None:
+                return None
+            
+            # Рассчитываем стоимость позиции в USDT
+            position_value_usdt = wallet_balance * (RISK_PERCENT / 100.0)
+            
+            # Применяем плечо
+            if USE_LEVERAGE:
+                position_value_usdt = position_value_usdt * LEVERAGE
+            
+            # Рассчитываем количество контрактов
+            raw_qty = position_value_usdt / current_price
+            
+            # Округляем до шага количества
+            qty_step = instrument_info['qtyStep']
+            if qty_step > 0:
+                # Округляем вниз до ближайшего шага
+                qty = int(raw_qty / qty_step) * qty_step
+            else:
+                qty = raw_qty
+            
+            # Проверяем минимальное количество
+            min_qty = instrument_info['minOrderQty']
+            if qty < min_qty:
+                qty = min_qty
+                logger.warning(f"[{self.instance_id}] Количество {symbol} скорректировано до минимального: {min_qty}")
+            
+            # Проверяем минимальную стоимость ордера
+            min_notional = instrument_info['minNotionalValue']
+            if qty * current_price < min_notional:
+                # Корректируем количество до минимальной стоимости
+                qty = min_notional / current_price
+                if qty_step > 0:
+                    qty = int(qty / qty_step) * qty_step
+                logger.warning(f"[{self.instance_id}] Количество {symbol} скорректировано до минимальной стоимости ордера")
+            
+            # Округляем до 8 знаков для безопасности
+            qty = round(qty, 8)
+            
+            logger.info(f"[{self.instance_id}] Рассчитано количество для {symbol}: {qty} "
+                       f"(баланс: {wallet_balance:.2f}, цена: {current_price})")
+            return qty
+            
+        except Exception as e:
+            logger.error(f"[{self.instance_id}] Ошибка при расчёте количества для {symbol}: {e}")
+            return None
+
+    # ------------------ Торговые методы ------------------
+    async def open_long(self, symbol: str, current_price: float) -> bool:
+        """
+        Открывает лонг-сделку с TP и SL.
+        Возвращает True при успехе.
+        """
+        if not TRADING_ENABLED:
+            logger.info(f"[{self.instance_id}] Торговля отключена, сделка для {symbol} не открыта")
+            return False
+
+        # Проверяем, нет ли открытой позиции
+        if await self._check_open_positions():
+            logger.info(f"[{self.instance_id}] Есть открытая позиция ({self.open_position_info.get('symbol')}), "
+                       f"новая сделка для {symbol} не открыта")
+            await self.send_telegram(f"⚠️ <b>СДЕЛКА НЕ ОТКРЫТА</b>\n"
+                                     f"Монета: {symbol}\n"
+                                     f"Причина: уже есть открытая позиция ({self.open_position_info.get('symbol')})")
+            return False
+
+        try:
+            # Рассчитываем количество для ордера
+            qty = await self._calculate_order_qty(symbol, current_price)
+            if qty is None or qty <= 0:
+                logger.error(f"[{self.instance_id}] Не удалось рассчитать количество для {symbol}")
+                return False
+
+            # Устанавливаем плечо (если фьючерсы)
+            if USE_LEVERAGE:
+                try:
+                    self.session.set_leverage(
+                        category="linear",
+                        symbol=symbol,
+                        buyLeverage=str(LEVERAGE),
+                        sellLeverage=str(LEVERAGE)
+                    )
+                    logger.info(f"[{self.instance_id}] Установлено плечо {LEVERAGE} для {symbol}")
+                except Exception as e:
+                    logger.warning(f"[{self.instance_id}] Не удалось установить плечо: {e}")
+
+            # Рассчитываем цены TP и SL
+            tp_price = current_price * (1 + TAKE_PROFIT_PERCENT / 100.0)
+            sl_price = current_price * (1 - STOP_LOSS_PERCENT / 100.0)
+
+            # Отправляем ордер
+            order = self.session.place_order(
+                category="linear",
+                symbol=symbol,
+                side="Buy",
+                orderType="Market",
+                qty=str(qty),
+                takeProfit=str(round(tp_price, 2)),
+                stopLoss=str(round(sl_price, 2)),
+                timeInForce="GTC",
+                positionIdx=0  # One-Way Mode
+            )
+
+            if order.get('retCode') == 0:
+                logger.info(f"[{self.instance_id}] Лонг открыт: {symbol} | Цена: {current_price} | Qty: {qty} | TP: {tp_price} | SL: {sl_price}")
+                await self.send_telegram(f"✅ <b>СДЕЛКА ОТКРЫТА</b>\n"
+                                         f"Монета: {symbol}\n"
+                                         f"Цена: {current_price}\n"
+                                         f"Размер: {qty} контрактов\n"
+                                         f"TP: {tp_price:.2f} (+{TAKE_PROFIT_PERCENT}%)\n"
+                                         f"SL: {sl_price:.2f} (-{STOP_LOSS_PERCENT}%)")
+                # Обновляем информацию об открытой позиции
+                self.has_open_position = True
+                self.open_position_info = {
+                    'symbol': symbol,
+                    'size': qty,
+                    'avgPrice': current_price
+                }
+                return True
+            else:
+                logger.error(f"[{self.instance_id}] Ошибка открытия ордера: {order}")
+                await self.send_telegram(f"❌ Ошибка открытия сделки {symbol}: {order.get('retMsg')}")
+                return False
+
+        except Exception as e:
+            logger.error(f"[{self.instance_id}] Исключение при открытии сделки {symbol}: {e}")
+            return False
+
+    async def _get_wallet_balance(self) -> float:
+        """Возвращает баланс USDT в кошельке."""
+        try:
+            resp = self.session.get_wallet_balance(accountType="UNIFIED", coin="USDT")
+            if resp['retCode'] == 0:
+                balance = float(resp['result']['list'][0]['coin'][0]['walletBalance'])
+                logger.debug(f"[{self.instance_id}] Баланс USDT: {balance}")
+                return balance
+            else:
+                logger.error(f"Ошибка получения баланса: {resp}")
+                return None
+        except Exception as e:
+            logger.error(f"Исключение при получении баланса: {e}")
+            return None
+
+    # ------------------ Остальные методы (загрузка модели, работа с CSV, Telegram, история и т.д.) ------------------
     def _load_model(self):
+        """Загружает ML-модель, если она используется."""
         if self.use_ml_filter and os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
             try:
                 self.kmeans = joblib.load(MODEL_PATH)
@@ -102,8 +362,8 @@ class OIMonitor:
             else:
                 logger.info(f"[{self.instance_id}] ML-фильтрация отключена настройками")
 
-    # ------------------ Работа с CSV ------------------
     async def _save_features_to_csv(self):
+        """Сохраняет признаки в CSV-файл."""
         if not self.feature_buffer:
             return
         file_exists = os.path.isfile(SIGNALS_CSV)
@@ -118,8 +378,8 @@ class OIMonitor:
                 await f.write(','.join(map(str, row)) + '\n')
         self.feature_buffer.clear()
 
-    # ------------------ Telegram ------------------
     async def send_telegram(self, text: str):
+        """Отправляет сообщение в Telegram."""
         url = f"https://api.telegram.org/bot{self.tg_token}/sendMessage"
         payload = {'chat_id': self.tg_chat_id, 'text': text, 'parse_mode': 'HTML'}
         try:
@@ -168,6 +428,22 @@ class OIMonitor:
         if old_val is None or old_val == 0:
             return 0.0
         return (current_val - old_val) / old_val * 100.0
+
+    # ------------------ Проверка консолидации цены ------------------
+    def _is_consolidation(self, symbol, current_ts, price_now, window_sec, max_range_pct):
+        if symbol not in self.price_history:
+            return False
+        hist = self.price_history[symbol]
+        cutoff = current_ts - window_sec
+        prices = [val for ts, val in hist if ts >= cutoff]
+        if len(prices) < 2:
+            return False
+        min_price = min(prices)
+        max_price = max(prices)
+        if min_price == 0:
+            return False
+        range_pct = (max_price - min_price) / min_price * 100.0
+        return range_pct <= max_range_pct
 
     # ------------------ Обработка сделок (CVD) ------------------
     async def process_trade(self, message):
@@ -238,7 +514,7 @@ class OIMonitor:
             logger.error(f"Ошибка проверки кластера: {e}")
             return True
 
-    # ------------------ Обработка ticker (основной цикл с проверкой OI+CVD) ------------------
+    # ------------------ Обработка ticker (основной цикл) ------------------
     async def process_ticker(self, message):
         topic = message.get('topic', '')
         if 'tickers' not in topic:
@@ -258,7 +534,13 @@ class OIMonitor:
         except (ValueError, TypeError):
             return
 
-        # Обновляем истории OI, цены, объёма
+        # ---- ФИЛЬТРЫ НИЗКОЙ ЛИКВИДНОСТИ ----
+        if volume < MIN_24H_VOLUME:
+            return
+        if oi_value < MIN_OPEN_INTEREST:
+            return
+
+        # Обновляем истории
         self._update_history(self.oi_history, symbol, ts, oi_value)
         self._update_history(self.price_history, symbol, ts, price)
         self._update_history(self.volume_history, symbol, ts, volume)
@@ -275,27 +557,29 @@ class OIMonitor:
         if oi_change < OI_THRESHOLD:
             return
 
-        # --- Проверка роста CVD за те же 15 минут ---
+        # Проверка роста CVD
         cvd_now = self.current_cvd.get(symbol, 0.0)
         old_cvd = self._get_value_at(self.cvd_history, symbol, target_ts)
         if old_cvd is None:
-            # Если истории CVD нет (например, не было сделок), сигнал не отправляем
             return
-        # Избегаем деления на ноль
         if old_cvd == 0:
             cvd_change = 100.0 if cvd_now > 0 else 0.0
         else:
             cvd_change = (cvd_now - old_cvd) / abs(old_cvd) * 100.0
-
         if cvd_change <= 0:
-            return   # CVD не вырос или остался нулевым
+            return
+
+        # Проверка консолидации
+        if not self._is_consolidation(symbol, ts, price, CONSOLIDATION_WINDOW, CONSOLIDATION_THRESHOLD):
+            logger.debug(f"[{self.instance_id}] {symbol} отклонён: нет боковика")
+            return
 
         # Cooldown
         last_alert_ts = self.last_alert.get(symbol, 0)
         if ts - last_alert_ts < COOLDOWN_SECONDS:
             return
 
-        # Собираем признаки (для CSV и опционально для ML)
+        # Сбор признаков
         features = self._collect_features(symbol, ts, oi_value, price)
         if not features:
             return
@@ -305,7 +589,7 @@ class OIMonitor:
         if len(self.feature_buffer) >= self.buffer_size:
             await self._save_features_to_csv()
 
-        # Опциональная ML-фильтрация
+        # ML-фильтрация
         if self.use_ml_filter and not self._is_good_pattern(features):
             logger.debug(f"[{self.instance_id}] Сигнал {symbol} отфильтрован моделью")
             return
@@ -319,7 +603,7 @@ class OIMonitor:
         signal_number = self.daily_counts[symbol]
         self.last_alert[symbol] = ts
 
-        msg = (f"🚀 <b>РОСТ OI И CVD</b>\n"
+        msg = (f"🚀 <b>РОСТ OI И CVD (боковик)</b>\n"
                f"Монета: {symbol}\n"
                f"OI вырос: {oi_change:.2f}%\n"
                f"CVD вырос: {cvd_change:.2f}%\n"
@@ -328,6 +612,10 @@ class OIMonitor:
                f"Время: {time.strftime('%H:%M:%S')}")
         logger.info(f"[{self.instance_id}] Сигнал {symbol}: OI={oi_change:.2f}% CVD={cvd_change:.2f}%")
         await self.send_telegram(msg)
+
+        # ---- АВТОМАТИЧЕСКОЕ ОТКРЫТИЕ СДЕЛКИ ----
+        if TRADING_ENABLED:
+            await self.open_long(symbol, price)
 
     # ------------------ Callbacks для WebSocket ------------------
     def handle_ticker(self, message):
@@ -360,7 +648,6 @@ class OIMonitor:
             logger.error(f"[{self.instance_id}] Ошибка подписки tickers: {e}")
             return
 
-        # WebSocket для trade_stream (CVD) с разбиением на чанки
         trade_chunks = [self.symbols[i:i + MAX_SYMBOLS_PER_TRADE_STREAM]
                         for i in range(0, len(self.symbols), MAX_SYMBOLS_PER_TRADE_STREAM)]
 

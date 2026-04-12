@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 
-DATA_DIR = "data"
+DATA_DIR = "data2"
 SIGNALS_LABELED_CSV = os.path.join(DATA_DIR, "signals_labeled.csv")
 MODEL_PATH = os.path.join(DATA_DIR, "kmeans.pkl")
 SCALER_PATH = os.path.join(DATA_DIR, "scaler.pkl")
