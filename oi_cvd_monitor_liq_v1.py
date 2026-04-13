@@ -36,8 +36,8 @@ BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 USE_ML_FILTER = True   # если False, ML не применяется
 
 # Фильтры низкой ликвидности
-MIN_24H_VOLUME = 100_000        # минимальный объём торгов за 24ч в USDT (1 млн)
-MIN_OPEN_INTEREST = 50_000       # минимальный OI в USDT (500 тыс)
+MIN_24H_VOLUME = 1000_000        # минимальный объём торгов за 24ч в USDT (1 млн)
+MIN_OPEN_INTEREST = 500_000       # минимальный OI в USDT (500 тыс)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
