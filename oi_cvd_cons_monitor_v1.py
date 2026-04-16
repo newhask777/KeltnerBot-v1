@@ -15,9 +15,9 @@ import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
 TELEGRAM_TOKEN = "8779412110:AAHhMjJvo_hnAcmWO8eCsO5qZuMN4gAD18g"
-TELEGRAM_CHAT_ID = "7776458723"
+TELEGRAM_CHAT_ID = "-1003879339910"
 
-OI_THRESHOLD = 5                            # порог роста OI за 15 мин (%)
+OI_THRESHOLD = 5                          # порог роста OI за 15 мин (%)
 TIME_WINDOW = 60 * 60                       # храним историю за 1 час (3600 сек)
 COOLDOWN_SECONDS = 600                      # задержка между уведомлениями
 SYMBOLS_PER_CONNECTION = 200                # для tickers
@@ -40,8 +40,8 @@ MIN_24H_VOLUME = 10_000        # минимальный объём торгов 
 MIN_OPEN_INTEREST = 5_000       # минимальный OI в USDT (500 тыс)
 
 # Фильтр боковика (консолидации)
-CONSOLIDATION_WINDOW = 7200       # 30 минут в секундах
-CONSOLIDATION_THRESHOLD = 1.0     # максимальное отклонение цены в процентах
+CONSOLIDATION_WINDOW = 7200    # 30 минут в секундах
+CONSOLIDATION_THRESHOLD = 1.0    # максимальное отклонение цены в процентах
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
