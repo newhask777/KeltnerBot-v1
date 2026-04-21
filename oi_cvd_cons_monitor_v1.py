@@ -40,8 +40,9 @@ MIN_24H_VOLUME = 10_000        # минимальный объём торгов 
 MIN_OPEN_INTEREST = 5_000       # минимальный OI в USDT (500 тыс)
 
 # Фильтр боковика (консолидации)
-CONSOLIDATION_WINDOW = 7200    # 30 минут в секундах
-CONSOLIDATION_THRESHOLD = 1.0    # максимальное отклонение цены в процентах
+
+CONSOLIDATION_WINDOW = 3600       # 30 минут в секундах
+CONSOLIDATION_THRESHOLD = 2.0     # максимальное отклонение цены в процентах
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
