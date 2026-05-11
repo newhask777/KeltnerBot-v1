@@ -31,9 +31,9 @@ session = HTTP(
 
 
 # Possition settings params
-symbol = 'DOGEUSDT'
+symbol = 'TRXUSDT'
 timeframe = 60
-qty = 250
+qty = 7
 min_macd_dif = 0.0005
 position = None
 status = None
