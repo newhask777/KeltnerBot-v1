@@ -12,8 +12,8 @@ import os
 
 
 # Bybit api tokens
-API_KEY = 'suRlpRoLXUFIIgqAvC'
-API_SECRET = 'Sflsd8h6EWn0yoPdqCHnO15BbazntyDinBSq'
+API_KEY = '9qqmPIAeJUUJTsgQLG'
+API_SECRET = 'hFtwl0BacHi9jOAIBv9lnNS0ry7pOcFrezwH'
 
 
 # Telegram api tokens
