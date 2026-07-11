@@ -14,8 +14,8 @@ import joblib
 import numpy as np
 
 # ------------------ НАСТРОЙКИ ------------------
-TELEGRAM_TOKEN = "8675414561:AAFjtb9iPKelQoyO_pEvJjIYmI9G7628bWo"
-TELEGRAM_CHAT_ID = "-1003879339910"
+TELEGRAM_TOKEN = "8940920988:AAHH3Fr_XTaQVXVls6cssFt3nGHcaLlgf8k"
+TELEGRAM_CHAT_ID = "5650732610"
 
 OI_THRESHOLD = 5                            # порог роста OI за 15 мин (%)
 TIME_WINDOW = 60 * 60                       # храним историю за 1 час (3600 сек)
