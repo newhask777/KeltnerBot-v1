@@ -12,8 +12,8 @@ import os
 
 
 # Bybit api tokens
-API_KEY = '9qqmPIAeJUUJTsgQLG'
-API_SECRET = 'hFtwl0BacHi9jOAIBv9lnNS0ry7pOcFrezwH'
+API_KEY = 'AF4mEuQ7Cn6FKQuB6t'
+API_SECRET = '5p5vR80mIfNIHi3yNB76DYxBpHD8ZPIKkj8B'
 
 
 # Telegram api tokens
@@ -34,7 +34,7 @@ session = HTTP(
 symbol = 'DOGEUSDT'
 timeframe = 60
 qty = 250
-min_macd_dif = 0.0005
+min_macd_dif = 0.0001
 position = None
 status = None
 
@@ -44,6 +44,32 @@ def get_historical_data():
         category="linear",
         symbol=symbol,
         interval=timeframe,
+        limit=200
+    )
+    
+    # Проверка наличия данных
+    if not resp or 'result' not in resp or 'list' not in resp['result']:
+        print("Error: No data received from API")
+        return None
+    
+    df = pd.DataFrame(resp['result']['list'], columns=[
+        'timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'
+    ])
+    
+    # Конвертация типов данных
+    df = df[::-1]  # Реверс порядка данных (старые -> новые)
+    df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
+    df['close'] = df['close'].astype(float)
+    return df
+
+
+
+def get_historical_data_4h():
+    """Получение и обработка исторических данных"""
+    resp = session.get_kline(
+        category="linear",
+        symbol=symbol,
+        interval=240,
         limit=200
     )
     
@@ -272,16 +298,16 @@ def check_crossover(df):
         crossover = (
             prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif and
-            mid_macd > mid_signal # Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif #and
+            #mid_macd > mid_signal # Подтверждение в средней точке
         )
 
 
         crossunder = (
             prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif and
-            mid_macd < mid_signal # Подтверждение в средней точке  
+            (current_signal - current_macd) >= min_macd_dif #and
+            #mid_macd < mid_signal # Подтверждение в средней точке  
         )
 
         print('above')
@@ -295,15 +321,15 @@ def check_crossover(df):
         crossover = (
             prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif and 
-            mid_macd > mid_signal# Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif #and 
+            #mid_macd > mid_signal# Подтверждение в средней точке
         )
 
         crossunder = (
             prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif and 
-            mid_macd < mid_signal# Подтверждение в средней точке
+            (current_signal - current_macd) >= min_macd_dif #and 
+            #mid_macd < mid_signal# Подтверждение в средней точке
         )
 
         print('under')
@@ -539,7 +565,7 @@ def calculate_adx(df, period=14):
 """
 Telegram message
 """
-def send_telegram_alert(adx, rsi):
+def send_telegram_alert(rsi):
     """Отправка текущего состояния в Telegram"""
     try:
         message = (
@@ -548,60 +574,12 @@ def send_telegram_alert(adx, rsi):
             f"Symbol: *{symbol}*\n"
             f"Position: `{position}`\n"
             f"MACD Diff: `{min_macd_dif:.6f}`\n"
-            f"ADX: `{adx:.2f}`"
+            # f"ADX: `{adx:.2f}`"
             f"RSI: `{rsi}`"
         )
         bot.send_message(TELEGRAM_CHAT_ID, message, parse_mode='Markdown')
     except Exception as e:
         print(f"Telegram send error: {e}")
-
-
-
-def get_open_interest(symbol):
-    resp = session.get_open_interest(category="linear", symbol=symbol, period="1min")
-    if resp['retCode'] == 0:
-        return float(resp['result']['list'][0]['openInterest'])
-    return None
-
-def check_oi_squeeze(symbol):
-    oi_current = get_open_interest(symbol)
-    time.sleep(60)  # подождать минуту
-    oi_prev = get_open_interest(symbol)
-    if oi_current and oi_prev:
-        change = (oi_current - oi_prev) / oi_prev * 100
-        # Если OI резко упало (сквиз уже произошёл) или слишком быстро растёт
-        if abs(change) > 15:
-            return True
-    return False
-
-
-
-def is_squeezing(df, bollinger_period=20, keltner_period=20, bb_mult=2, kc_mult=1.5):
-    # Bollinger Bands
-    sma = df['close'].rolling(bollinger_period).mean()
-    bb_upper = sma + bb_mult * df['close'].rolling(bollinger_period).std()
-    bb_lower = sma - bb_mult * df['close'].rolling(bollinger_period).std()
-    bb_width = bb_upper - bb_lower
-
-    # Keltner Channels (используем ATR)
-    tr = np.maximum(df['high'] - df['low'], 
-                    np.abs(df['high'] - df['close'].shift()),
-                    np.abs(df['low'] - df['close'].shift()))
-    atr = tr.rolling(keltner_period).mean()
-    kc_upper = sma + kc_mult * atr
-    kc_lower = sma - kc_mult * atr
-    kc_width = kc_upper - kc_lower
-
-    # Сжатие, если BB-ширина меньше KC-ширины
-    return bb_width.iloc[-1] < kc_width.iloc[-1]
-
-
-
-def is_abnormal_volume(df, multiplier=5, window=20):
-    avg_volume = df['volume'].iloc[-window:].mean()
-    current_volume = df['volume'].iloc[-1]
-    return current_volume > avg_volume * multiplier
-
 
 
 def main_loop():
@@ -617,28 +595,26 @@ def main_loop():
         try:
             start_time = time.time()
             df = get_historical_data()
+            df_4h = get_historical_data_4h()
             
             if df is not None:
-                df = calculate_macd(df)
+                df_4h = calculate_macd(df_4h)
                 
                 if df is not None:
-                    crossover, crossunder = check_crossover(df)
+                    crossover, crossunder = check_crossover(df_4h)
 
                     pnl = get_unrealized_pnl_percentage()
                     if pnl == None:
                         pnl = 0.0
 
-                    adx_df = calculate_adx(df, period=14)
-                    adx = round(adx_df['adx'].values[-1], 4)
-                    print(adx_df['adx'].values[-1])
+                    # adx_df = calculate_adx(df, period=14)
+                    # adx = round(adx_df['adx'].values[-1], 4)
+                    # print(adx_df['adx'].values[-1])
 
                     rsi_2 = calculate_rsi_2(df['close'].values, period=14)
                     #rsi_2_v = round(rsi_df.values[-1], 2)
                     stoch_rsi, stoch_k, stoch_d = calculate_stoch_rsi(rsi_2)
                     print(stoch_k[-1])
-
-                    # ema_100_df = calculate_ema_100(df)
-                    # ema_100 = round(ema_100_df["ema_100"].values[-1],5)
 
                     lookback = 10
                     multiplier = 3
@@ -657,71 +633,37 @@ def main_loop():
                         print(f"\nТекущий тренд: НИСХОДЯЩИЙ (цена {last_row['close']} < SuperTrend {last_row['supertrend']})")
                         trend = "Short"
 
-                    # sar_trend = calculate_sar(df, 0.02, 0.2)
-                    # print(f"SAR Trend: {sar_trend[-1]}")
-                    # # print(f"SAR: {sar[-1]}")
-                    # # print(ep[-1])
-                    # # print(af[-1])
 
                     # LONG position logic
-                    if position != 'LONG' and trend == "Long" and stoch_k[-1] > 80: # and ema_100 < trend_value and stoch_k > 80 
-
-                         # Дополнительные проверки
-                        if is_squeezing(df):
-                            print("Squeeze detected – skip LONG")
-                            continue
-                        if is_abnormal_volume(df):
-                            print("Abnormal volume – possible squeeze, skip")
-                            continue
-                        if check_oi_squeeze(symbol):
-                            print("Open Interest squeeze filter triggered")
-                            continue
-
+                    if crossover and position != 'LONG' and trend == "Long" and stoch_k[-1] > 80: # and ema_100 < trend_value and stoch_k > 80 
                         close_position('BUY')
                         execute_trade('BUY')
                         #status = "Long"
-                        send_telegram_alert(adx, rsi_2)
+                        send_telegram_alert(rsi_2)
                             
-                    elif position == 'LONG' and status == None and pnl >= 5.0:
-                        take_profit('SELL')
-                        #status = 'Long take profit'
+                    elif position == 'LONG' and status == None and pnl >= 4.0:
+                        take_profit()
+                        #status = 'FIRST_TAKE_PROFIT'
 
-                    # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
+                    # elif position == 'LONG' and status == 'FIRST_TAKE_PROFIT' and pnl >= 7.0:
                     #     take_profit('SELL', qty=60)
                     #     status = 'SECOND_TAKE_PROFIT'
 
 
                           
                     # SHORT position logic
-                    elif position != 'SHORT' and trend == "Short" and stoch_k[-1] < 20:
-
-                         # Дополнительные проверки
-                        if is_squeezing(df):
-                            print("Squeeze detected – skip SHORT")
-                            continue
-                        if is_abnormal_volume(df):
-                            print("Abnormal volume – possible squeeze, skip")
-                            continue
-                        if check_oi_squeeze(symbol):
-                            print("Open Interest squeeze filter triggered")
-                            continue
-
+                    elif crossunder and position != 'SHORT' and trend == "Short" and stoch_k[-1] < 20:
                         close_position('SELL')
                         execute_trade('SELL')
                         #status = "Short"
-                        send_telegram_alert(adx, rsi_2)
+                        send_telegram_alert(rsi_2)
                             
-                    elif position == 'SHORT' and status == None and pnl >= 5.0:
-                        take_profit('BUY')
-                        #status = "Short take profit"
+                    elif position == 'SHORT' and status == None and pnl >= 4.0:
+                        take_profit()
                     #   status = 'FIRST_TAKE_PROFIT'
 
-                    # elif crossunder and position != 'SHORT' and status == "Long":
-                    #     execute_trade('SELL')
-                    #     status = "Short"
-                    #     send_telegram_alert(adx, rsi)
                     
-                    # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 45.0:
+                    # elif position == 'SHORT' and status == 'FIRST_TAKE_PROFIT' and pnl >= 7.0:
                     #     take_profit('BUY', qty=60)
                     #     status = 'SECOND_TAKE_PROFIT'
 
@@ -732,7 +674,7 @@ def main_loop():
                     print(f"Symbol: {symbol}")
                     print(f"Position: {position}")
                     print(f"Diff: {min_macd_dif}")
-                    print(f"ADX: {adx}")
+                    # print(f"ADX: {adx}")
                     #print(f"RSI: {rsi}")
                     print(f"Cупер тренд: {trend}")
                     print(f"UpperTrend: {df['uptrend'].values[-1]}")
@@ -743,7 +685,7 @@ def main_loop():
                     
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
-                        print(f"MACD: {df['MACD'].iloc[-1]:.5f} | Signal: {df['Signal'].iloc[-1]:.5f}")
+                        print(f"MACD: {df_4h['MACD'].iloc[-1]:.5f} | Signal: {df_4h['Signal'].iloc[-1]:.5f}")
                         # print(f"Middle MACD: {df['MACD'].iloc[-2]:.5f} | Middle Signal: {df['Signal'].iloc[-2]:5f}")
             
             # Пауза между итерациями
