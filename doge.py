@@ -17,8 +17,8 @@ API_SECRET = '5p5vR80mIfNIHi3yNB76DYxBpHD8ZPIKkj8B'
 
 
 # Telegram api tokens
-TELEGRAM_BOT_TOKEN = '8745514537:AAFRTenFnxRmhmW7p3ChAOxw0QZ3CkOyxJQ'  # Получите у @BotFather
-TELEGRAM_CHAT_ID = '7776458723'      # Получите у @userinfobot
+TELEGRAM_BOT_TOKEN = '8968569374:AAGW76iTBj-dcA6hmQ3EgkO5pwbExNAuijA'  # Получите у @BotFather
+TELEGRAM_CHAT_ID = '5650732610'      # Получите у @userinfobot
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
@@ -268,9 +268,12 @@ def calculate_macd(df):
     df['MACD'] = df['EMA12'] - df['EMA26']
     df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
+
     return df
 
+
 def check_crossover(df):
+    global min_macd_dif
     """Проверка пересечения MACD и Signal линии с учетом положения гистограммы"""
     if df is None or len(df) < 3:
         return False, False
@@ -299,15 +302,15 @@ def check_crossover(df):
             prev_macd < prev_signal and 
             current_macd > current_signal and
             (current_macd - current_signal) >= min_macd_dif #and
-            #mid_macd > mid_signal # Подтверждение в средней точке
+            #mid_macd > mid_signal  # Подтверждение в средней точке
         )
 
 
         crossunder = (
             prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif #and
-            #mid_macd < mid_signal # Подтверждение в средней точке  
+            (current_signal - current_macd) >= min_macd_dif ##and
+            #mid_macd < mid_signal  # Подтверждение в средней точке
         )
 
         print('above')
@@ -321,23 +324,23 @@ def check_crossover(df):
         crossover = (
             prev_macd < prev_signal and 
             current_macd > current_signal and
-            (current_macd - current_signal) >= min_macd_dif #and 
-            #mid_macd > mid_signal# Подтверждение в средней точке
+            (current_macd - current_signal) >= min_macd_dif #and
+            #mid_macd > mid_signal  # Подтверждение в средней точке
         )
 
         crossunder = (
             prev_macd > prev_signal and 
             current_macd < current_signal and
-            (current_signal - current_macd) >= min_macd_dif #and 
-            #mid_macd < mid_signal# Подтверждение в средней точке
+            (current_signal - current_macd) >= min_macd_dif #and
+            #mid_macd < mid_signal  # Подтверждение в средней точке
         )
 
         print('under')
 
     else:
-        crossover = False
-        crossunder = False
-   
+        crossover = None
+        crossunder = None
+
     return crossover, crossunder
 
 """
@@ -595,10 +598,10 @@ def main_loop():
         try:
             start_time = time.time()
             df = get_historical_data()
-            df_4h = get_historical_data_4h()
+            df_4 = get_historical_data_4h()
             
             if df is not None:
-                df_4h = calculate_macd(df_4h)
+                df_4h = calculate_macd(df_4)
                 
                 if df is not None:
                     crossover, crossunder = check_crossover(df_4h)
@@ -686,7 +689,7 @@ def main_loop():
                     if len(df) > 0:
                         print(f"Last close: {df['close'].iloc[-1]:.5f}")
                         print(f"MACD: {df_4h['MACD'].iloc[-1]:.5f} | Signal: {df_4h['Signal'].iloc[-1]:.5f}")
-                        # print(f"Middle MACD: {df['MACD'].iloc[-2]:.5f} | Middle Signal: {df['Signal'].iloc[-2]:5f}")
+                        print(f"Middle MACD: {df_4h['MACD'].iloc[-2]:.5f} | Middle Signal: {df_4h['Signal'].iloc[-2]:5f}")
             
             # Пауза между итерациями
             time.sleep(1)
