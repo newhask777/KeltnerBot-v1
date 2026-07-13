@@ -156,11 +156,6 @@ def execute_trade(signal):
     """Исполнение торгового сигнала"""
     global position, last_trade_time
     
-    # current_time = time.time()
-    # if last_trade_time and (current_time - last_trade_time) < TRADE_COOLDOWN:
-    #     print("Trade cooldown active")
-    #     return
-    
     try:
         params = {
             "category": "linear",
@@ -179,16 +174,14 @@ def execute_trade(signal):
             print(f"{datetime.now()} - SELL {qty} USDT")
             session.place_order(**params, side="Sell")
             position = 'SHORT'
-                      
-        # last_trade_time = current_time
-        
+                              
     except Exception as e:
         print(f"Trade error: {str(e)}")
 
 
 def close_position(signal):
     """Закрытие текущей позиции"""
-    global position, last_trade_time
+    global position
 
     try:
         params = {
@@ -205,16 +198,16 @@ def close_position(signal):
             session.place_order(**params, side="Buy")
             position = None
             # ---- Добавленный блок перезапуска ----
-            print("Position closed, restarting bot...")
-            os.kill(os.getpid(), trigger.SIGINT)   # отправляем сигнал самому себе
+            # print("Position closed, restarting bot...")
+            # os.kill(os.getpid(), trigger.SIGINT)   # отправляем сигнал самому себе
 
         elif signal == 'SELL' and position == 'LONG':
             print(f"{datetime.now()} - CLOSE LONG {qty} USDT")
             session.place_order(**params, side="Sell")
             position = None
             # ---- Добавленный блок перезапуска ----
-            print("Position closed, restarting bot...")
-            os.kill(os.getpid(), trigger.SIGINT)
+            # print("Position closed, restarting bot...")
+            # os.kill(os.getpid(), trigger.SIGINT)
 
     except Exception as e:
         print(f"Close position error: {str(e)}")
@@ -239,16 +232,16 @@ def take_profit():
             session.place_order(**params, side="Sell")
             position = None
             # ---- Добавленный блок перезапуска ----
-            print("Take profit executed, restarting bot...")
-            os.kill(os.getpid(), trigger.SIGINT)
+            # print("Take profit executed, restarting bot...")
+            # os.kill(os.getpid(), trigger.SIGINT)
 
         elif position == 'SHORT':
             print(f"{datetime.now()} - TAKE PROFIT {qty} USDT")
             session.place_order(**params, side="Buy")
             position = None
             # ---- Добавленный блок перезапуска ----
-            print("Take profit executed, restarting bot...")
-            os.kill(os.getpid(), trigger.SIGINT)
+            # print("Take profit executed, restarting bot...")
+            # os.kill(os.getpid(), trigger.SIGINT)
 
     except Exception as e:
         print(f"Close position error: {str(e)}")
@@ -603,7 +596,7 @@ def main_loop():
             if df is not None:
                 df_4h = calculate_macd(df_4)
                 
-                if df is not None:
+                if df_4h is not None:
                     crossover, crossunder = check_crossover(df_4h)
 
                     pnl = get_unrealized_pnl_percentage()
